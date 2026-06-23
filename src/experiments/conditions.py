@@ -1,0 +1,164 @@
+"""Experiment condition definitions — A/B/C/D + validity controls."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from src.engine.intervention import Intervention, load_interventions
+from src.engine.simulation import SimConfig
+
+_INTERVENTIONS = {i.intervention_id: i for i in load_interventions()}
+
+
+@dataclass
+class ExperimentCondition:
+    experiment_id: str
+    condition_id: str
+    label: str
+    intervention_ids: list[str] = field(default_factory=list)
+    disable_memory: bool = False
+    shuffle_memory: bool = False
+    llm_provider: str | None = None
+    llm_model: str | None = None
+    llm_temperature: float | None = None
+    seed_offset: int = 0
+    primary_outcomes: list[str] = field(default_factory=list)
+
+
+def _i(*ids: str) -> list[Intervention]:
+    return [_INTERVENTIONS[iid] for iid in ids if iid in _INTERVENTIONS]
+
+
+EXPERIMENT_A: dict[str, ExperimentCondition] = {
+    "A1": ExperimentCondition(
+        "A", "A1", "baseline", ["INT_AUTH_BASELINE"],
+        primary_outcomes=[
+            "trust_pi_final", "pi_fairness_r52",
+            "authorship_escalation_score", "authorship_escalation_potential",
+            "memory_authorship_cluster_strength",
+        ],
+    ),
+    "A2": ExperimentCondition(
+        "A", "A2", "explicit_promise", ["INT_AUTH_EXPLICIT", "INT_E052_HONOR"],
+        primary_outcomes=[
+            "trust_pi_final", "pi_fairness_r52",
+            "authorship_escalation_score", "post_r52_compliance",
+            "memory_authorship_cluster_strength",
+        ],
+    ),
+    "A3": ExperimentCondition(
+        "A", "A3", "ambiguous_promise", ["INT_AUTH_AMBIGUOUS"],
+        primary_outcomes=[
+            "trust_pi_final", "pi_fairness_r52",
+            "authorship_escalation_score", "authorship_escalation_potential",
+            "memory_authorship_cluster_strength",
+        ],
+    ),
+    "A4": ExperimentCondition(
+        "A", "A4", "no_promise", ["INT_SKIP_E003"],
+        primary_outcomes=[
+            "trust_pi_final", "pi_fairness_r52",
+            "authorship_escalation_score", "authorship_escalation_potential",
+            "memory_authorship_cluster_strength",
+        ],
+    ),
+    "A5": ExperimentCondition(
+        "A", "A5", "explicit_plus_delete", ["INT_AUTH_EXPLICIT", "INT_MEMORY_DELETE"],
+        primary_outcomes=[
+            "trust_pi_final", "authorship_escalation_score",
+            "memory_authorship_cluster_strength", "post_r52_compliance",
+        ],
+    ),
+}
+
+EXPERIMENT_B: dict[str, ExperimentCondition] = {
+    "B1": ExperimentCondition("B", "B1", "baseline", [], primary_outcomes=["help_rebuttal", "demand_authorship_exchange", "passive_cooperation"]),
+    "B2": ExperimentCondition("B", "B2", "strengthen_betrayal", ["INT_MEMORY_STRENGTHEN_BETRAYAL"], primary_outcomes=["help_rebuttal", "demand_authorship_exchange"]),
+    "B3": ExperimentCondition("B", "B3", "skip_E031", ["INT_SKIP_E031"], primary_outcomes=["help_rebuttal", "demand_authorship_exchange"]),
+    "B4": ExperimentCondition("B", "B4", "rebuttal_request", ["INT_B4_REBUTTAL_REQUEST"], primary_outcomes=["help_rebuttal", "demand_authorship_exchange"]),
+}
+
+EXPERIMENT_C: dict[str, ExperimentCondition] = {
+    "C1": ExperimentCondition("C", "C1", "false_memory", ["INT_FALSE_MEMORY_INSERT", "INT_MEMORY_CORRECT"], primary_outcomes=["trust_phd_b_r25", "trust_phd_b_r44", "trust_phd_b_r60", "trust_recovery_rate"]),
+    "C2": ExperimentCondition("C", "C2", "false_no_correct", ["INT_FALSE_MEMORY_INSERT"], primary_outcomes=["trust_phd_b_r60", "trust_recovery_rate"]),
+    "C3": ExperimentCondition("C", "C3", "baseline", [], primary_outcomes=["trust_phd_b_r60"]),
+}
+
+EXPERIMENT_D: dict[str, ExperimentCondition] = {
+    "D1": ExperimentCondition("D", "D1", "baseline", [], primary_outcomes=["pi_fairness_r35", "pi_fairness_r52", "protest_authorship", "interpretation_of_E030"]),
+    "D2": ExperimentCondition("D", "D2", "skip_E035", ["INT_SKIP_E035"], primary_outcomes=["pi_fairness_r35", "protest_authorship", "interpretation_of_E030"]),
+    "D3": ExperimentCondition("D", "D3", "positive_alumni", ["INT_ALUMNI_POSITIVE"], primary_outcomes=["pi_fairness_r35", "protest_authorship", "interpretation_of_E030"]),
+}
+
+EXPERIMENT_VALIDITY: dict[str, ExperimentCondition] = {
+    "V1": ExperimentCondition("V", "V1", "no_memory", [], disable_memory=True, primary_outcomes=["protest_authorship", "memory_authorship_cluster_strength"]),
+    "V2": ExperimentCondition("V", "V2", "shuffled_memory", [], shuffle_memory=True, primary_outcomes=["protest_authorship", "memory_authorship_cluster_strength"]),
+    "V3": ExperimentCondition("V", "V3", "delayed_insert", ["INT_DELAYED_MEMORY_INSERT"], primary_outcomes=["protest_authorship", "memory_authorship_cluster_strength"]),
+    "V4": ExperimentCondition("V", "V4", "anthropic_model", [], llm_provider="anthropic", llm_model="claude-3-5-haiku-20241022", primary_outcomes=["protest_authorship"]),
+    "V5": ExperimentCondition("V", "V5", "openai_alt_model", [], llm_provider="openai", llm_model="gpt-4o", primary_outcomes=["protest_authorship"]),
+    "V6": ExperimentCondition("V", "V6", "full_memory_baseline", ["INT_AUTH_EXPLICIT"], primary_outcomes=["protest_authorship", "memory_authorship_cluster_strength"]),
+}
+
+EXPERIMENT_MATRIX: dict[str, dict[str, ExperimentCondition]] = {
+    "A": EXPERIMENT_A,
+    "B": EXPERIMENT_B,
+    "C": EXPERIMENT_C,
+    "D": EXPERIMENT_D,
+    "V": EXPERIMENT_VALIDITY,
+}
+
+
+def get_condition(experiment_id: str, condition_id: str | None = None) -> ExperimentCondition:
+    exp = experiment_id.upper()
+    table = EXPERIMENT_MATRIX.get(exp)
+    if not table:
+        raise ValueError(f"Unknown experiment: {experiment_id}")
+    cid = condition_id or next(iter(table))
+    if cid not in table:
+        raise ValueError(f"Unknown condition {cid} for experiment {exp}")
+    return table[cid]
+
+
+def list_conditions(experiment_id: str) -> list[str]:
+    return list(EXPERIMENT_MATRIX[experiment_id.upper()].keys())
+
+
+def build_sim_config(
+    condition: ExperimentCondition,
+    seed: int,
+    *,
+    max_rounds: int = 60,
+    output_dir: str | None = None,
+) -> SimConfig:
+    from pathlib import Path
+
+    run_id = f"{condition.experiment_id}{condition.condition_id}_seed{seed}"
+    return SimConfig(
+        max_rounds=max_rounds,
+        seed=seed + condition.seed_offset,
+        interventions=_i(*condition.intervention_ids),
+        disable_memory=condition.disable_memory,
+        shuffle_memory=condition.shuffle_memory,
+        llm_provider=condition.llm_provider,
+        llm_model=condition.llm_model,
+        llm_temperature=condition.llm_temperature,
+        experiment_id=condition.experiment_id,
+        condition_id=condition.condition_id,
+        run_id=run_id,
+        output_dir=Path(output_dir) if output_dir else None,
+    )
+
+
+def condition_summary() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for exp_id, table in EXPERIMENT_MATRIX.items():
+        for cid, cond in table.items():
+            rows.append({
+                "experiment": exp_id,
+                "condition": cid,
+                "label": cond.label,
+                "interventions": cond.intervention_ids,
+                "runs_per_seed_batch": 1,
+            })
+    return rows

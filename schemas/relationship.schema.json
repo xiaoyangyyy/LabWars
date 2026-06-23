@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://labwars.local/schemas/relationship.schema.json",
+  "title": "LabWars Relationship Edge",
+  "type": "object",
+  "required": [
+    "source",
+    "target",
+    "trust",
+    "resentment",
+    "dependency",
+    "obligation",
+    "perceived_credit_threat",
+    "communication_frequency",
+    "alliance",
+    "information_access",
+    "last_interaction_valence"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "source": { "type": "string" },
+    "target": { "type": "string" },
+    "trust": { "type": "number", "minimum": 0, "maximum": 1 },
+    "resentment": { "type": "number", "minimum": 0, "maximum": 1 },
+    "dependency": { "type": "number", "minimum": 0, "maximum": 1 },
+    "obligation": { "type": "number", "minimum": 0, "maximum": 1 },
+    "perceived_credit_threat": { "type": "number", "minimum": 0, "maximum": 1 },
+    "communication_frequency": { "type": "number", "minimum": 0, "maximum": 1 },
+    "alliance": { "type": "number", "minimum": 0, "maximum": 1 },
+    "information_access": { "type": "number", "minimum": 0, "maximum": 1 },
+    "last_interaction_valence": { "type": "number", "minimum": -1, "maximum": 1 }
+  }
+}

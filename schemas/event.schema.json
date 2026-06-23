@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://labwars.local/schemas/event.schema.json",
+  "title": "LabWars Event Atom",
+  "type": "object",
+  "required": [
+    "event_id",
+    "round",
+    "type",
+    "visibility",
+    "source",
+    "targets",
+    "payload",
+    "objective_fact",
+    "framing",
+    "truth_status",
+    "memory_salience",
+    "is_anchor"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "pattern": "^E[0-9]{3}$"
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 80
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "idea_claim",
+        "experiment_success",
+        "experiment_failure",
+        "baseline_failure",
+        "authorship_promise",
+        "authorship_ambiguity",
+        "deadline_shift",
+        "funding_pressure",
+        "rival_preprint",
+        "reviewer_feedback",
+        "negative_result_hidden",
+        "credit_dispute",
+        "private_lobbying",
+        "public_praise",
+        "public_blame",
+        "resource_reallocation",
+        "team_meeting",
+        "submission_decision",
+        "authorship_draft",
+        "threat_withdraw",
+        "narrative_change",
+        "integrity_dispute",
+        "external_history"
+      ]
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["private", "bilateral", "team", "lab", "public"]
+    },
+    "source": { "type": "string" },
+    "targets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "payload": { "type": "object" },
+    "objective_fact": {
+      "type": "object",
+      "required": ["raw_statement", "verifiable_claims"],
+      "properties": {
+        "raw_statement": { "type": ["string", "null"] },
+        "verifiable_claims": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "framing": {
+      "type": "string",
+      "enum": ["neutral", "positive", "negative", "ambiguous", "team", "merit", "execution", "idea"]
+    },
+    "truth_status": {
+      "type": "string",
+      "enum": ["verified", "rumored", "disputed", "false"]
+    },
+    "memory_salience": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "is_anchor": { "type": "boolean" },
+    "description": { "type": "string" },
+    "act": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 6
+    }
+  }
+}

@@ -1,0 +1,74 @@
+# LabWars 世界常量
+
+world:
+  days_per_round: 3
+  total_rounds: 60
+  total_days: 180
+  target_conference: "NeurIPS"
+
+internal_agents:
+  - pi
+  - phd_a
+  - phd_b
+  - master_c
+  - postdoc_d
+  - engineer_e
+  - visiting_f
+
+external_agents:
+  - collaborator_g
+  - rival_lab_h
+  - reviewer_1
+  - reviewer_2
+  - reviewer_3
+  - program_officer
+  - lab_alumni
+
+mandatory_anchor_events:
+  - E003
+  - E014
+  - E019
+  - E020
+  - E030
+  - E031
+  - E035
+  - E038
+  - E040
+  - E044
+  - E047
+  - E050
+  - E052
+
+initial_project:
+  idea_clarity: 0.30
+  experimental_strength: 0.10
+  code_stability: 0.15
+  writing_quality: 0.05
+  novelty_risk: 0.40
+  baseline_coverage: 0.10
+  deadline_pressure: 0.35
+  rival_threat: 0.10
+  funding_pressure: 0.20
+  authorship_conflict: 0.15
+  team_morale: 0.70
+  integrity_risk: 0.10
+
+initial_contribution_ledger:
+  idea:
+    phd_a: 0.80
+    pi: 0.15
+    postdoc_d: 0.05
+  experiments:
+    phd_b: 0.50
+    engineer_e: 0.30
+    master_c: 0.20
+  writing:
+    phd_a: 0.40
+    pi: 0.30
+    postdoc_d: 0.30
+  data:
+    master_c: 0.60
+    collaborator_g: 0.40
+  supervision:
+    pi: 0.80
+    postdoc_d: 0.20

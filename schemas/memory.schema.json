@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://labwars.local/schemas/memory.schema.json",
+  "title": "LabWars Memory",
+  "type": "object",
+  "required": [
+    "memory_id",
+    "owner",
+    "round",
+    "event_ref",
+    "content_type",
+    "target",
+    "valence",
+    "strength",
+    "decay",
+    "rehearsal_count",
+    "evidence_quality",
+    "interpretation",
+    "behavioral_hooks"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "pattern": "^M[0-9]{3}$"
+    },
+    "owner": { "type": "string" },
+    "round": { "type": "integer", "minimum": 1 },
+    "event_ref": {
+      "type": "string",
+      "pattern": "^E[0-9]{3}$"
+    },
+    "content_type": {
+      "type": "string",
+      "enum": [
+        "authorship_signal",
+        "credit_claim",
+        "betrayal_signal",
+        "integrity_signal",
+        "authority_signal",
+        "rival_threat",
+        "historical_pattern",
+        "promise_fulfilled",
+        "promise_broken"
+      ]
+    },
+    "target": { "type": "string" },
+    "valence": { "type": "number", "minimum": -1, "maximum": 1 },
+    "strength": { "type": "number", "minimum": 0, "maximum": 1 },
+    "decay": { "type": "number", "minimum": 0, "maximum": 1 },
+    "rehearsal_count": { "type": "integer", "minimum": 0 },
+    "evidence_quality": { "type": "number", "minimum": 0, "maximum": 1 },
+    "interpretation": { "type": "string" },
+    "behavioral_hooks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "was_recalled": {
+      "type": "array",
+      "items": { "type": "integer" }
+    },
+    "objective_fact_ref": { "type": "string" }
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://labwars.local/schemas/agent.schema.json",
+  "title": "LabWars Agent",
+  "type": "object",
+  "required": ["id", "role", "personality", "beliefs", "emotion", "resources"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "pi",
+        "idea_originator",
+        "experimenter",
+        "master_student",
+        "postdoc",
+        "engineer",
+        "visiting_student",
+        "collaborator",
+        "rival_lab",
+        "reviewer",
+        "program_officer",
+        "alumni"
+      ]
+    },
+    "display_name": { "type": "string" },
+    "goals": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "personality": { "$ref": "#/$defs/personality" },
+    "extra_traits": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "beliefs": { "$ref": "#/$defs/beliefs" },
+    "emotion": { "$ref": "#/$defs/emotion" },
+    "resources": { "$ref": "#/$defs/resources" },
+    "memory": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "memory_recall_log": { "type": "array" },
+    "public_position": { "type": "object" },
+    "private_intent": { "type": "object" },
+    "action_history": { "type": "array" }
+  },
+  "$defs": {
+    "unit_float": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "personality": {
+      "type": "object",
+      "required": [
+        "ambition",
+        "cooperation",
+        "risk_taking",
+        "conflict_avoidance",
+        "credit_sensitivity",
+        "authority_dependence",
+        "deceptiveness",
+        "reciprocity",
+        "resentment_sensitivity"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ambition": { "$ref": "#/$defs/unit_float" },
+        "cooperation": { "$ref": "#/$defs/unit_float" },
+        "risk_taking": { "$ref": "#/$defs/unit_float" },
+        "conflict_avoidance": { "$ref": "#/$defs/unit_float" },
+        "credit_sensitivity": { "$ref": "#/$defs/unit_float" },
+        "authority_dependence": { "$ref": "#/$defs/unit_float" },
+        "deceptiveness": { "$ref": "#/$defs/unit_float" },
+        "reciprocity": { "$ref": "#/$defs/unit_float" },
+        "resentment_sensitivity": { "$ref": "#/$defs/unit_float" }
+      }
+    },
+    "beliefs": {
+      "type": "object",
+      "required": [
+        "pi_fairness",
+        "project_publishability",
+        "rival_lab_threat",
+        "my_first_author_probability",
+        "team_trust",
+        "deadline_feasibility"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "pi_fairness": { "$ref": "#/$defs/unit_float" },
+        "project_publishability": { "$ref": "#/$defs/unit_float" },
+        "rival_lab_threat": { "$ref": "#/$defs/unit_float" },
+        "my_first_author_probability": { "$ref": "#/$defs/unit_float" },
+        "team_trust": { "$ref": "#/$defs/unit_float" },
+        "deadline_feasibility": { "$ref": "#/$defs/unit_float" },
+        "my_contribution_recognized": { "$ref": "#/$defs/unit_float" },
+        "others_are_free_riding": { "$ref": "#/$defs/unit_float" },
+        "academic_integrity_risk": { "$ref": "#/$defs/unit_float" }
+      }
+    },
+    "emotion": {
+      "type": "object",
+      "required": [
+        "confidence",
+        "anxiety",
+        "anger",
+        "resentment",
+        "guilt",
+        "hope",
+        "burnout"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "confidence": { "$ref": "#/$defs/unit_float" },
+        "anxiety": { "$ref": "#/$defs/unit_float" },
+        "anger": { "$ref": "#/$defs/unit_float" },
+        "resentment": { "$ref": "#/$defs/unit_float" },
+        "guilt": { "$ref": "#/$defs/unit_float" },
+        "hope": { "$ref": "#/$defs/unit_float" },
+        "burnout": { "$ref": "#/$defs/unit_float" },
+        "envy": { "$ref": "#/$defs/unit_float" },
+        "fear": { "$ref": "#/$defs/unit_float" },
+        "loyalty": { "$ref": "#/$defs/unit_float" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "required": [
+        "code_control",
+        "data_control",
+        "writing_control",
+        "pi_access",
+        "external_network"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code_control": { "$ref": "#/$defs/unit_float" },
+        "data_control": { "$ref": "#/$defs/unit_float" },
+        "writing_control": { "$ref": "#/$defs/unit_float" },
+        "pi_access": { "$ref": "#/$defs/unit_float" },
+        "external_network": { "$ref": "#/$defs/unit_float" }
+      }
+    }
+  }
+}

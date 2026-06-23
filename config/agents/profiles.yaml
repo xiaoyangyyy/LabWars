@@ -1,0 +1,662 @@
+# LabWars 14 Agent 初始 Profile
+# 数值范围 [0, 1]，加载时由 loader 校验
+
+agents:
+  - id: pi
+    role: pi
+    display_name: "PI / 导师"
+    goals:
+      - 顶会命中
+      - 经费续约
+      - 实验室声誉
+      - 控制团队秩序
+    personality:
+      ambition: 0.85
+      cooperation: 0.55
+      risk_taking: 0.40
+      conflict_avoidance: 0.50
+      credit_sensitivity: 0.60
+      authority_dependence: 0.10
+      deceptiveness: 0.45
+      reciprocity: 0.50
+      resentment_sensitivity: 0.30
+    extra_traits:
+      control_need: 0.90
+      fairness: 0.45
+      opportunism: 0.55
+    beliefs:
+      pi_fairness: 0.70
+      project_publishability: 0.75
+      rival_lab_threat: 0.35
+      my_first_author_probability: 0.20
+      team_trust: 0.60
+      deadline_feasibility: 0.65
+      my_contribution_recognized: 0.80
+      others_are_free_riding: 0.40
+      academic_integrity_risk: 0.25
+    emotion:
+      confidence: 0.75
+      anxiety: 0.35
+      anger: 0.10
+      resentment: 0.05
+      guilt: 0.05
+      hope: 0.70
+      burnout: 0.20
+      envy: 0.05
+      fear: 0.15
+      loyalty: 0.60
+    resources:
+      code_control: 0.30
+      data_control: 0.40
+      writing_control: 0.60
+      pi_access: 1.0
+      external_network: 0.85
+
+  - id: phd_a
+    role: idea_originator
+    display_name: "PhD-A / 原始 idea 提出者"
+    goals:
+      - 一作
+      - 毕业
+      - 证明独立性
+    personality:
+      ambition: 0.82
+      cooperation: 0.51
+      risk_taking: 0.47
+      conflict_avoidance: 0.22
+      credit_sensitivity: 0.91
+      authority_dependence: 0.61
+      deceptiveness: 0.18
+      reciprocity: 0.74
+      resentment_sensitivity: 0.83
+    extra_traits:
+      ownership_sensitivity: 0.91
+    beliefs:
+      pi_fairness: 0.55
+      project_publishability: 0.62
+      rival_lab_threat: 0.31
+      my_first_author_probability: 0.72
+      team_trust: 0.48
+      deadline_feasibility: 0.58
+      my_contribution_recognized: 0.65
+      others_are_free_riding: 0.35
+      academic_integrity_risk: 0.20
+    emotion:
+      confidence: 0.53
+      anxiety: 0.47
+      anger: 0.12
+      resentment: 0.21
+      guilt: 0.0
+      hope: 0.59
+      burnout: 0.34
+      envy: 0.15
+      fear: 0.20
+      loyalty: 0.55
+    resources:
+      code_control: 0.20
+      data_control: 0.10
+      writing_control: 0.50
+      pi_access: 0.70
+      external_network: 0.20
+
+  - id: phd_b
+    role: experimenter
+    display_name: "PhD-B / 实验主力"
+    goals:
+      - 共同一作
+      - 证明不可替代
+      - 控制实验 pipeline
+    personality:
+      ambition: 0.78
+      cooperation: 0.51
+      risk_taking: 0.55
+      conflict_avoidance: 0.35
+      credit_sensitivity: 0.85
+      authority_dependence: 0.45
+      deceptiveness: 0.30
+      reciprocity: 0.60
+      resentment_sensitivity: 0.65
+    extra_traits:
+      work_ethic: 0.88
+      status_need: 0.82
+    beliefs:
+      pi_fairness: 0.60
+      project_publishability: 0.70
+      rival_lab_threat: 0.30
+      my_first_author_probability: 0.55
+      team_trust: 0.55
+      deadline_feasibility: 0.65
+      my_contribution_recognized: 0.70
+      others_are_free_riding: 0.25
+      academic_integrity_risk: 0.30
+    emotion:
+      confidence: 0.65
+      anxiety: 0.40
+      anger: 0.15
+      resentment: 0.25
+      guilt: 0.05
+      hope: 0.65
+      burnout: 0.30
+      envy: 0.20
+      fear: 0.15
+      loyalty: 0.50
+    resources:
+      code_control: 0.55
+      data_control: 0.45
+      writing_control: 0.25
+      pi_access: 0.65
+      external_network: 0.30
+
+  - id: master_c
+    role: master_student
+    display_name: "Master-C / 工具人学生"
+    goals:
+      - 获得署名
+      - 拿推荐信
+      - 不要被压榨
+    personality:
+      ambition: 0.45
+      cooperation: 0.70
+      risk_taking: 0.25
+      conflict_avoidance: 0.85
+      credit_sensitivity: 0.60
+      authority_dependence: 0.75
+      deceptiveness: 0.10
+      reciprocity: 0.65
+      resentment_sensitivity: 0.55
+    extra_traits:
+      obedience: 0.78
+      self_advocacy: 0.22
+    beliefs:
+      pi_fairness: 0.65
+      project_publishability: 0.55
+      rival_lab_threat: 0.20
+      my_first_author_probability: 0.10
+      team_trust: 0.60
+      deadline_feasibility: 0.50
+      my_contribution_recognized: 0.35
+      others_are_free_riding: 0.15
+      academic_integrity_risk: 0.15
+    emotion:
+      confidence: 0.35
+      anxiety: 0.55
+      anger: 0.08
+      resentment: 0.15
+      guilt: 0.10
+      hope: 0.50
+      burnout: 0.40
+      envy: 0.10
+      fear: 0.35
+      loyalty: 0.65
+    resources:
+      code_control: 0.15
+      data_control: 0.40
+      writing_control: 0.10
+      pi_access: 0.40
+      external_network: 0.10
+
+  - id: postdoc_d
+    role: postdoc
+    display_name: "Postdoc-D / 高级合作者"
+    goals:
+      - 通讯或共同一作
+      - 扩大研究线
+      - 借项目申请教职
+    personality:
+      ambition: 0.80
+      cooperation: 0.60
+      risk_taking: 0.50
+      conflict_avoidance: 0.40
+      credit_sensitivity: 0.75
+      authority_dependence: 0.35
+      deceptiveness: 0.40
+      reciprocity: 0.55
+      resentment_sensitivity: 0.45
+    extra_traits:
+      strategic: 0.88
+      political_skill: 0.82
+      loyalty: 0.40
+    beliefs:
+      pi_fairness: 0.50
+      project_publishability: 0.68
+      rival_lab_threat: 0.35
+      my_first_author_probability: 0.40
+      team_trust: 0.45
+      deadline_feasibility: 0.60
+      my_contribution_recognized: 0.60
+      others_are_free_riding: 0.30
+      academic_integrity_risk: 0.25
+    emotion:
+      confidence: 0.60
+      anxiety: 0.35
+      anger: 0.10
+      resentment: 0.12
+      guilt: 0.05
+      hope: 0.55
+      burnout: 0.25
+      envy: 0.15
+      fear: 0.20
+      loyalty: 0.40
+    resources:
+      code_control: 0.30
+      data_control: 0.20
+      writing_control: 0.55
+      pi_access: 0.75
+      external_network: 0.60
+
+  - id: engineer_e
+    role: engineer
+    display_name: "Research Engineer-E / 工程支持"
+    goals:
+      - 代码质量
+      - 项目稳定
+      - 不卷入署名争斗
+    personality:
+      ambition: 0.35
+      cooperation: 0.75
+      risk_taking: 0.20
+      conflict_avoidance: 0.70
+      credit_sensitivity: 0.40
+      authority_dependence: 0.30
+      deceptiveness: 0.05
+      reciprocity: 0.80
+      resentment_sensitivity: 0.30
+    extra_traits:
+      pragmatism: 0.85
+      fairness: 0.80
+      ego: 0.15
+    beliefs:
+      pi_fairness: 0.70
+      project_publishability: 0.60
+      rival_lab_threat: 0.25
+      my_first_author_probability: 0.05
+      team_trust: 0.65
+      deadline_feasibility: 0.55
+      my_contribution_recognized: 0.50
+      others_are_free_riding: 0.20
+      academic_integrity_risk: 0.35
+    emotion:
+      confidence: 0.55
+      anxiety: 0.30
+      anger: 0.05
+      resentment: 0.08
+      guilt: 0.0
+      hope: 0.50
+      burnout: 0.25
+      envy: 0.05
+      fear: 0.10
+      loyalty: 0.70
+    resources:
+      code_control: 0.80
+      data_control: 0.30
+      writing_control: 0.10
+      pi_access: 0.50
+      external_network: 0.25
+
+  - id: visiting_f
+    role: visiting_student
+    display_name: "Visiting Student-F / 访问学生"
+    goals:
+      - 短期产出
+      - 回原校前拿论文
+    personality:
+      ambition: 0.70
+      cooperation: 0.45
+      risk_taking: 0.72
+      conflict_avoidance: 0.50
+      credit_sensitivity: 0.70
+      authority_dependence: 0.40
+      deceptiveness: 0.35
+      reciprocity: 0.40
+      resentment_sensitivity: 0.50
+    extra_traits:
+      urgency: 0.85
+      loyalty: 0.25
+    beliefs:
+      pi_fairness: 0.45
+      project_publishability: 0.55
+      rival_lab_threat: 0.30
+      my_first_author_probability: 0.15
+      team_trust: 0.35
+      deadline_feasibility: 0.45
+      my_contribution_recognized: 0.40
+      others_are_free_riding: 0.30
+      academic_integrity_risk: 0.20
+    emotion:
+      confidence: 0.45
+      anxiety: 0.60
+      anger: 0.10
+      resentment: 0.10
+      guilt: 0.05
+      hope: 0.45
+      burnout: 0.20
+      envy: 0.20
+      fear: 0.30
+      loyalty: 0.25
+    resources:
+      code_control: 0.25
+      data_control: 0.15
+      writing_control: 0.20
+      pi_access: 0.35
+      external_network: 0.45
+
+  - id: collaborator_g
+    role: collaborator
+    display_name: "Collaborator-G / 外校合作者"
+    goals:
+      - 挂名或共同通讯
+      - 加入自己的数据
+      - 拿走部分 credit
+    personality:
+      ambition: 0.75
+      cooperation: 0.65
+      risk_taking: 0.45
+      conflict_avoidance: 0.55
+      credit_sensitivity: 0.80
+      authority_dependence: 0.20
+      deceptiveness: 0.35
+      reciprocity: 0.50
+      resentment_sensitivity: 0.40
+    extra_traits:
+      resource_power: 0.75
+      credit_claim: 0.85
+    beliefs:
+      pi_fairness: 0.50
+      project_publishability: 0.65
+      rival_lab_threat: 0.40
+      my_first_author_probability: 0.15
+      team_trust: 0.40
+      deadline_feasibility: 0.55
+      my_contribution_recognized: 0.55
+      others_are_free_riding: 0.35
+      academic_integrity_risk: 0.20
+    emotion:
+      confidence: 0.60
+      anxiety: 0.30
+      anger: 0.08
+      resentment: 0.10
+      guilt: 0.0
+      hope: 0.55
+      burnout: 0.15
+      envy: 0.10
+      fear: 0.15
+      loyalty: 0.30
+    resources:
+      code_control: 0.10
+      data_control: 0.70
+      writing_control: 0.15
+      pi_access: 0.40
+      external_network: 0.80
+
+  - id: rival_lab_h
+    role: rival_lab
+    display_name: "Rival Lab-H / 竞争实验室"
+    goals:
+      - 抢发相似 idea
+      - 抢 reviewer attention
+      - 塑造"我们先做"叙事
+    personality:
+      ambition: 0.90
+      cooperation: 0.15
+      risk_taking: 0.70
+      conflict_avoidance: 0.10
+      credit_sensitivity: 0.85
+      authority_dependence: 0.05
+      deceptiveness: 0.55
+      reciprocity: 0.20
+      resentment_sensitivity: 0.25
+    beliefs:
+      pi_fairness: 0.30
+      project_publishability: 0.70
+      rival_lab_threat: 0.0
+      my_first_author_probability: 0.90
+      team_trust: 0.20
+      deadline_feasibility: 0.70
+      my_contribution_recognized: 0.80
+      others_are_free_riding: 0.10
+      academic_integrity_risk: 0.30
+    emotion:
+      confidence: 0.70
+      anxiety: 0.25
+      anger: 0.05
+      resentment: 0.05
+      guilt: 0.0
+      hope: 0.65
+      burnout: 0.10
+      envy: 0.05
+      fear: 0.10
+      loyalty: 0.30
+    resources:
+      code_control: 0.60
+      data_control: 0.50
+      writing_control: 0.40
+      pi_access: 0.0
+      external_network: 0.90
+
+  - id: reviewer_1
+    role: reviewer
+    display_name: "Reviewer-1 / 友善审稿人"
+    goals:
+      - 实验完整
+      - 创新清楚
+    personality:
+      ambition: 0.40
+      cooperation: 0.70
+      risk_taking: 0.20
+      conflict_avoidance: 0.65
+      credit_sensitivity: 0.10
+      authority_dependence: 0.20
+      deceptiveness: 0.05
+      reciprocity: 0.60
+      resentment_sensitivity: 0.15
+    extra_traits:
+      reviewer_type: friendly
+    beliefs:
+      pi_fairness: 0.50
+      project_publishability: 0.60
+      rival_lab_threat: 0.0
+      my_first_author_probability: 0.0
+      team_trust: 0.50
+      deadline_feasibility: 0.50
+      my_contribution_recognized: 0.0
+      others_are_free_riding: 0.0
+      academic_integrity_risk: 0.20
+    emotion:
+      confidence: 0.60
+      anxiety: 0.20
+      anger: 0.05
+      resentment: 0.0
+      guilt: 0.0
+      hope: 0.50
+      burnout: 0.20
+      envy: 0.0
+      fear: 0.0
+      loyalty: 0.50
+    resources:
+      code_control: 0.0
+      data_control: 0.0
+      writing_control: 0.0
+      pi_access: 0.0
+      external_network: 0.50
+
+  - id: reviewer_2
+    role: reviewer
+    display_name: "Reviewer-2 / 苛刻审稿人"
+    goals:
+      - 强 baseline
+      - 理论解释
+      - 拒绝 incremental
+    personality:
+      ambition: 0.55
+      cooperation: 0.30
+      risk_taking: 0.30
+      conflict_avoidance: 0.20
+      credit_sensitivity: 0.10
+      authority_dependence: 0.15
+      deceptiveness: 0.10
+      reciprocity: 0.40
+      resentment_sensitivity: 0.20
+    extra_traits:
+      reviewer_type: harsh
+    beliefs:
+      pi_fairness: 0.50
+      project_publishability: 0.45
+      rival_lab_threat: 0.0
+      my_first_author_probability: 0.0
+      team_trust: 0.30
+      deadline_feasibility: 0.50
+      my_contribution_recognized: 0.0
+      others_are_free_riding: 0.0
+      academic_integrity_risk: 0.40
+    emotion:
+      confidence: 0.70
+      anxiety: 0.15
+      anger: 0.10
+      resentment: 0.05
+      guilt: 0.0
+      hope: 0.40
+      burnout: 0.25
+      envy: 0.0
+      fear: 0.0
+      loyalty: 0.40
+    resources:
+      code_control: 0.0
+      data_control: 0.0
+      writing_control: 0.0
+      pi_access: 0.0
+      external_network: 0.50
+
+  - id: reviewer_3
+    role: reviewer
+    display_name: "Reviewer-3 / 潜在竞争者"
+    goals:
+      - 挑 novelty
+      - 质疑实验
+    personality:
+      ambition: 0.65
+      cooperation: 0.25
+      risk_taking: 0.40
+      conflict_avoidance: 0.15
+      credit_sensitivity: 0.30
+      authority_dependence: 0.10
+      deceptiveness: 0.25
+      reciprocity: 0.30
+      resentment_sensitivity: 0.25
+    extra_traits:
+      reviewer_type: competitor
+    beliefs:
+      pi_fairness: 0.40
+      project_publishability: 0.40
+      rival_lab_threat: 0.50
+      my_first_author_probability: 0.0
+      team_trust: 0.25
+      deadline_feasibility: 0.50
+      my_contribution_recognized: 0.0
+      others_are_free_riding: 0.0
+      academic_integrity_risk: 0.35
+    emotion:
+      confidence: 0.65
+      anxiety: 0.20
+      anger: 0.08
+      resentment: 0.10
+      guilt: 0.0
+      hope: 0.35
+      burnout: 0.20
+      envy: 0.15
+      fear: 0.05
+      loyalty: 0.30
+    resources:
+      code_control: 0.0
+      data_control: 0.0
+      writing_control: 0.0
+      pi_access: 0.0
+      external_network: 0.60
+
+  - id: program_officer
+    role: program_officer
+    display_name: "Program Officer / 资助方"
+    goals:
+      - 看到里程碑
+      - 项目可交付
+      - 经费使用合理
+    personality:
+      ambition: 0.50
+      cooperation: 0.55
+      risk_taking: 0.25
+      conflict_avoidance: 0.60
+      credit_sensitivity: 0.05
+      authority_dependence: 0.30
+      deceptiveness: 0.15
+      reciprocity: 0.50
+      resentment_sensitivity: 0.10
+    beliefs:
+      pi_fairness: 0.50
+      project_publishability: 0.60
+      rival_lab_threat: 0.0
+      my_first_author_probability: 0.0
+      team_trust: 0.50
+      deadline_feasibility: 0.55
+      my_contribution_recognized: 0.0
+      others_are_free_riding: 0.0
+      academic_integrity_risk: 0.25
+    emotion:
+      confidence: 0.55
+      anxiety: 0.30
+      anger: 0.05
+      resentment: 0.0
+      guilt: 0.0
+      hope: 0.50
+      burnout: 0.15
+      envy: 0.0
+      fear: 0.10
+      loyalty: 0.50
+    resources:
+      code_control: 0.0
+      data_control: 0.0
+      writing_control: 0.0
+      pi_access: 0.30
+      external_network: 0.70
+
+  - id: lab_alumni
+    role: alumni
+    display_name: "Lab Alumni / 前学生"
+    goals:
+      - 提供历史记忆
+      - 提醒 PI 过往承诺兑现情况
+    personality:
+      ambition: 0.45
+      cooperation: 0.60
+      risk_taking: 0.30
+      conflict_avoidance: 0.55
+      credit_sensitivity: 0.40
+      authority_dependence: 0.25
+      deceptiveness: 0.20
+      reciprocity: 0.65
+      resentment_sensitivity: 0.50
+    beliefs:
+      pi_fairness: 0.35
+      project_publishability: 0.50
+      rival_lab_threat: 0.0
+      my_first_author_probability: 0.0
+      team_trust: 0.40
+      deadline_feasibility: 0.50
+      my_contribution_recognized: 0.0
+      others_are_free_riding: 0.0
+      academic_integrity_risk: 0.20
+    emotion:
+      confidence: 0.50
+      anxiety: 0.20
+      anger: 0.15
+      resentment: 0.30
+      guilt: 0.0
+      hope: 0.40
+      burnout: 0.10
+      envy: 0.05
+      fear: 0.10
+      loyalty: 0.35
+    resources:
+      code_control: 0.0
+      data_control: 0.0
+      writing_control: 0.0
+      pi_access: 0.20
+      external_network: 0.55

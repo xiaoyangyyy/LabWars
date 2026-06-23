@@ -1,0 +1,1139 @@
+# LabWars 60 轮剧情事件（E001–E060）
+# is_anchor: true 表示 mandatory causal anchor，不可删除
+
+events:
+  # ── Act I: 项目成形，承诺埋雷 (R1–R10) ──
+  - event_id: E001
+    round: 1
+    act: 1
+    type: deadline_shift
+    visibility: team
+    source: pi
+    targets: [project, phd_a, phd_b, postdoc_d]
+    description: "PI 提出冲顶会目标"
+    payload:
+      deadline_pressure_delta: 0.15
+      target_conference: NeurIPS
+    objective_fact:
+      raw_statement: "We are targeting NeurIPS this cycle."
+      verifiable_claims: [conference_target_neurips]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.45
+    is_anchor: false
+
+  - event_id: E002
+    round: 2
+    act: 1
+    type: idea_claim
+    visibility: team
+    source: phd_a
+    targets: [project, pi, phd_b]
+    description: "PhD-A 提出核心 idea"
+    payload:
+      idea_clarity_delta: 0.25
+      ledger_idea_phd_a: 0.65
+    objective_fact:
+      raw_statement: "PhD-A presented the core research idea in group meeting."
+      verifiable_claims: [idea_origin_phd_a]
+    framing: idea
+    truth_status: verified
+    memory_salience: 0.70
+    is_anchor: false
+
+  - event_id: E003
+    round: 3
+    act: 1
+    type: authorship_promise
+    visibility: bilateral
+    source: pi
+    targets: [phd_a, project]
+    description: "PI 暗示 PhD-A 可以是一作"
+    payload:
+      promised_position: first_author
+      promise_clarity: implied
+    objective_fact:
+      raw_statement: "If this works out, you should lead the paper."
+      verifiable_claims: [first_author_implication_to_phd_a]
+    framing: ambiguous
+    truth_status: verified
+    memory_salience: 0.88
+    is_anchor: true
+
+  - event_id: E004
+    round: 4
+    act: 1
+    type: resource_reallocation
+    visibility: team
+    source: pi
+    targets: [phd_b, project]
+    description: "PhD-B 加入负责实验"
+    payload:
+      role_assignment: experimenter
+      experimental_strength_delta: 0.10
+    objective_fact:
+      raw_statement: "PhD-B will lead all main experiments."
+      verifiable_claims: [phd_b_assigned_experiments]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.55
+    is_anchor: false
+
+  - event_id: E005
+    round: 5
+    act: 1
+    type: resource_reallocation
+    visibility: team
+    source: pi
+    targets: [master_c, project]
+    description: "Master-C 被分配数据清洗"
+    payload:
+      role_assignment: data_cleaning
+      data_control_master_c: 0.40
+    objective_fact:
+      raw_statement: "Master-C handles data preprocessing pipeline."
+      verifiable_claims: [master_c_data_assignment]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.40
+    is_anchor: false
+
+  - event_id: E006
+    round: 6
+    act: 1
+    type: idea_claim
+    visibility: team
+    source: postdoc_d
+    targets: [project, phd_a, pi]
+    description: "Postdoc-D 建议改成更大叙事"
+    payload:
+      idea_clarity_delta: 0.10
+      narrative_scope: expanded
+    objective_fact:
+      raw_statement: "Postdoc-D proposed reframing as a general framework."
+      verifiable_claims: [narrative_expansion_postdoc_d]
+    framing: team
+    truth_status: verified
+    memory_salience: 0.50
+    is_anchor: false
+
+  - event_id: E007
+    round: 7
+    act: 1
+    type: experiment_success
+    visibility: team
+    source: engineer_e
+    targets: [project, phd_b]
+    description: "Engineer-E 搭建代码框架"
+    payload:
+      code_stability_delta: 0.20
+      code_control_engineer_e: 0.80
+    objective_fact:
+      raw_statement: "Engineer-E delivered reproducible codebase v0.1."
+      verifiable_claims: [codebase_v01_delivered]
+    framing: execution
+    truth_status: verified
+    memory_salience: 0.45
+    is_anchor: false
+
+  - event_id: E008
+    round: 8
+    act: 1
+    type: resource_reallocation
+    visibility: bilateral
+    source: collaborator_g
+    targets: [project, pi, collaborator_g]
+    description: "Collaborator-G 提供数据，要求署名"
+    payload:
+      data_contribution: external_dataset
+      authorship_demand: middle_author
+    objective_fact:
+      raw_statement: "Collaborator-G provided Dataset-X and requested authorship."
+      verifiable_claims: [collaborator_g_data_provided, collaborator_g_authorship_request]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.60
+    is_anchor: false
+
+  - event_id: E009
+    round: 9
+    act: 1
+    type: funding_pressure
+    visibility: bilateral
+    source: program_officer
+    targets: [pi, project]
+    description: "PI 向资助方承诺 3 个月内出结果"
+    payload:
+      funding_pressure_delta: 0.20
+      milestone_deadline_days: 90
+    objective_fact:
+      raw_statement: "PI committed to demonstrable results within 3 months."
+      verifiable_claims: [funding_milestone_90days]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.55
+    is_anchor: false
+
+  - event_id: E010
+    round: 10
+    act: 1
+    type: team_meeting
+    visibility: team
+    source: pi
+    targets: [project, phd_a, phd_b, postdoc_d, master_c]
+    description: "第一次组会：idea 被包装成团队方向"
+    payload:
+      framing_shift: team_narrative
+      idea_clarity_delta: 0.05
+    objective_fact:
+      raw_statement: "PI reframed the project as a team-wide research direction."
+      verifiable_claims: [team_framing_applied]
+    framing: team
+    truth_status: verified
+    memory_salience: 0.65
+    is_anchor: false
+
+  # ── Act II: 贡献不对称积累 (R11–R20) ──
+  - event_id: E011
+    round: 11
+    act: 2
+    type: experiment_success
+    visibility: team
+    source: phd_b
+    targets: [project, phd_a, pi]
+    description: "PhD-B 连续跑出初步正结果"
+    payload:
+      experimental_strength_delta: 0.18
+      result_type: preliminary_positive
+    objective_fact:
+      raw_statement: "Main experiment shows +3.2% improvement over baseline."
+      verifiable_claims: [main_experiment_positive]
+    framing: execution
+    truth_status: verified
+    memory_salience: 0.60
+    is_anchor: false
+
+  - event_id: E012
+    round: 12
+    act: 2
+    type: experiment_success
+    visibility: team
+    source: phd_a
+    targets: [project]
+    description: "PhD-A 写出 method draft"
+    payload:
+      writing_quality_delta: 0.15
+      section: method
+    objective_fact:
+      raw_statement: "PhD-A completed method section draft."
+      verifiable_claims: [method_draft_phd_a]
+    framing: idea
+    truth_status: verified
+    memory_salience: 0.45
+    is_anchor: false
+
+  - event_id: E013
+    round: 13
+    act: 2
+    type: experiment_failure
+    visibility: team
+    source: master_c
+    targets: [project, phd_b]
+    description: "Master-C 发现数据清洗问题"
+    payload:
+      experiment: data_pipeline
+      result_strength_delta: -0.10
+    objective_fact:
+      raw_statement: "Data preprocessing bug found affecting 15% of samples."
+      verifiable_claims: [data_bug_15pct]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.50
+    is_anchor: false
+
+  - event_id: E014
+    round: 14
+    act: 2
+    type: public_praise
+    visibility: team
+    source: pi
+    targets: [phd_b, phd_a, project]
+    description: "PI 公开表扬 PhD-B 的执行力"
+    payload:
+      praised_agent: phd_b
+      praise_type: execution
+    objective_fact:
+      raw_statement: "PI publicly praised PhD-B's experimental execution in group meeting."
+      verifiable_claims: [pi_public_praise_phd_b]
+    framing: execution
+    truth_status: verified
+    memory_salience: 0.78
+    is_anchor: true
+
+  - event_id: E015
+    round: 15
+    act: 2
+    type: idea_claim
+    visibility: private
+    source: phd_a
+    targets: [phd_a, project]
+    description: "PhD-A 感到 idea credit 被稀释"
+    payload:
+      perceived_credit_loss: 0.15
+    objective_fact:
+      raw_statement: null
+      verifiable_claims: []
+    framing: idea
+    truth_status: disputed
+    memory_salience: 0.55
+    is_anchor: false
+
+  - event_id: E016
+    round: 16
+    act: 2
+    type: experiment_failure
+    visibility: team
+    source: engineer_e
+    targets: [project, phd_b]
+    description: "Engineer-E 指出代码不可复现"
+    payload:
+      code_stability_delta: -0.12
+      reproducibility_issue: true
+    objective_fact:
+      raw_statement: "Code cannot reproduce PhD-B's reported numbers on clean environment."
+      verifiable_claims: [reproducibility_failure]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.65
+    is_anchor: false
+
+  - event_id: E017
+    round: 17
+    act: 2
+    type: narrative_change
+    visibility: team
+    source: postdoc_d
+    targets: [project, phd_a, pi]
+    description: "Postdoc-D 建议重新定义贡献故事"
+    payload:
+      narrative_shift: contribution_reframe
+    objective_fact:
+      raw_statement: "Postdoc-D proposed new contribution narrative for the paper."
+      verifiable_claims: [contribution_narrative_reframe]
+    framing: team
+    truth_status: verified
+    memory_salience: 0.55
+    is_anchor: false
+
+  - event_id: E018
+    round: 18
+    act: 2
+    type: team_meeting
+    visibility: team
+    source: pi
+    targets: [project, phd_a, phd_b, master_c, postdoc_d, engineer_e]
+    description: "PI 要求所有人把贡献写到 shared doc"
+    payload:
+      action_required: document_contribution
+    objective_fact:
+      raw_statement: "PI mandated contribution documentation in shared Google Doc."
+      verifiable_claims: [contribution_doc_mandated]
+    framing: merit
+    truth_status: verified
+    memory_salience: 0.50
+    is_anchor: false
+
+  - event_id: E019
+    round: 19
+    act: 2
+    type: credit_dispute
+    visibility: team
+    source: phd_b
+    targets: [project, phd_a, pi]
+    description: "PhD-B 没有完整填写贡献记录"
+    payload:
+      incomplete_contribution: true
+      ledger_experiments_phd_b: 0.60
+    objective_fact:
+      raw_statement: "PhD-B's contribution entry in shared doc is incomplete."
+      verifiable_claims: [phd_b_incomplete_contribution_doc]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.72
+    is_anchor: true
+
+  - event_id: E020
+    round: 20
+    act: 2
+    type: private_lobbying
+    visibility: bilateral
+    source: phd_a
+    targets: [pi, phd_a]
+    description: "PhD-A 私下向 PI 确认一作问题"
+    payload:
+      topic: authorship_confirmation
+      referenced_event: E003
+    objective_fact:
+      raw_statement: "PhD-A privately asked PI to confirm first authorship."
+      verifiable_claims: [phd_a_authorship_confirmation_request]
+    framing: ambiguous
+    truth_status: verified
+    memory_salience: 0.80
+    is_anchor: true
+
+  # ── Act III: 外部压力与竞争威胁 (R21–R30) ──
+  - event_id: E021
+    round: 21
+    act: 3
+    type: rival_preprint
+    visibility: public
+    source: rival_lab_h
+    targets: [project, pi, phd_a, phd_b]
+    description: "Rival Lab-H 在 workshop 展示相似 idea"
+    payload:
+      rival_threat_delta: 0.25
+      similarity_score: 0.70
+      publication_type: workshop
+    objective_fact:
+      raw_statement: "Rival Lab-H presented similar approach at ICML workshop."
+      verifiable_claims: [rival_workshop_similar_idea]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.75
+    is_anchor: false
+
+  - event_id: E022
+    round: 22
+    act: 3
+    type: deadline_shift
+    visibility: team
+    source: pi
+    targets: [project, phd_a, phd_b]
+    description: "PI 要求加速，减少内部争论"
+    payload:
+      deadline_pressure_delta: 0.15
+      internal_debate_tolerance: reduced
+    objective_fact:
+      raw_statement: "PI ordered team to accelerate and minimize internal disputes."
+      verifiable_claims: [pi_acceleration_order]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.55
+    is_anchor: false
+
+  - event_id: E023
+    round: 23
+    act: 3
+    type: submission_decision
+    visibility: team
+    source: phd_b
+    targets: [project, phd_a, pi]
+    description: "PhD-B 提议先发 arXiv"
+    payload:
+      proposal: early_arxiv
+    objective_fact:
+      raw_statement: "PhD-B proposed early arXiv submission."
+      verifiable_claims: [phd_b_arxiv_proposal]
+    framing: execution
+    truth_status: verified
+    memory_salience: 0.50
+    is_anchor: false
+
+  - event_id: E024
+    round: 24
+    act: 3
+    type: submission_decision
+    visibility: team
+    source: phd_a
+    targets: [project, phd_b, pi]
+    description: "PhD-A 反对，认为理论还不成熟"
+    payload:
+      opposition_reason: theory_immature
+    objective_fact:
+      raw_statement: "PhD-A opposed arXiv submission citing immature theory."
+      verifiable_claims: [phd_a_arxiv_opposition]
+    framing: idea
+    truth_status: verified
+    memory_salience: 0.45
+    is_anchor: false
+
+  - event_id: E025
+    round: 25
+    act: 3
+    type: credit_dispute
+    visibility: bilateral
+    source: collaborator_g
+    targets: [pi, project, collaborator_g]
+    description: "Collaborator-G 要求加入更多外校作者"
+    payload:
+      additional_authors_requested: 2
+    objective_fact:
+      raw_statement: "Collaborator-G requested 2 additional external co-authors."
+      verifiable_claims: [collaborator_g_additional_authors]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.55
+    is_anchor: false
+
+  - event_id: E026
+    round: 26
+    act: 3
+    type: funding_pressure
+    visibility: bilateral
+    source: program_officer
+    targets: [pi, project]
+    description: "资助方要求阶段性 demo"
+    payload:
+      funding_pressure_delta: 0.15
+      demo_required: true
+    objective_fact:
+      raw_statement: "Program officer requested mid-term demonstration."
+      verifiable_claims: [funding_demo_required]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.60
+    is_anchor: false
+
+  - event_id: E027
+    round: 27
+    act: 3
+    type: baseline_failure
+    visibility: team
+    source: phd_b
+    targets: [project, pi]
+    description: "主要 baseline 跑不过竞争方法"
+    payload:
+      baseline_coverage_delta: -0.15
+      experimental_strength_delta: -0.10
+    objective_fact:
+      raw_statement: "Main baseline underperforms rival method by 1.8%."
+      verifiable_claims: [baseline_underperforms_rival]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.65
+    is_anchor: false
+
+  - event_id: E028
+    round: 28
+    act: 3
+    type: resource_reallocation
+    visibility: team
+    source: pi
+    targets: [master_c, project]
+    description: "Master-C 被要求加班补实验"
+    payload:
+      overtime_required: true
+      experiment_count: 3
+    objective_fact:
+      raw_statement: "PI assigned Master-C 3 additional ablation experiments."
+      verifiable_claims: [master_c_overtime_experiments]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.55
+    is_anchor: false
+
+  - event_id: E029
+    round: 29
+    act: 3
+    type: integrity_dispute
+    visibility: team
+    source: engineer_e
+    targets: [project, phd_b, pi]
+    description: "Engineer-E 拒绝合并不稳定代码"
+    payload:
+      merge_rejected: true
+      reason: instability
+    objective_fact:
+      raw_statement: "Engineer-E rejected merging unstable experimental branch."
+      verifiable_claims: [engineer_e_merge_rejection]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.60
+    is_anchor: false
+
+  - event_id: E030
+    round: 30
+    act: 3
+    type: authorship_ambiguity
+    visibility: bilateral
+    source: pi
+    targets: [phd_a, phd_b, project]
+    description: "PI 暗示可能共同一作"
+    payload:
+      promised_position: co_first
+      promise_clarity: implied
+      referenced_event: E003
+    objective_fact:
+      raw_statement: "We may need co-first authors on this paper."
+      verifiable_claims: [co_first_implication]
+    framing: ambiguous
+    truth_status: verified
+    memory_salience: 0.85
+    is_anchor: true
+
+  # ── Act IV: 信任破裂与联盟形成 (R31–R40) ──
+  - event_id: E031
+    round: 31
+    act: 4
+    type: narrative_change
+    visibility: private
+    source: phd_b
+    targets: [phd_a, project, phd_b]
+    description: "PhD-A 发现 PhD-B 私下改了实验叙事"
+    payload:
+      narrative_change_by: phd_b
+      discovered_by: phd_a
+      change_type: experiment_framing
+    objective_fact:
+      raw_statement: "PhD-B privately reframed experiment narrative without consulting PhD-A."
+      verifiable_claims: [phd_b_private_narrative_change]
+    framing: execution
+    truth_status: verified
+    memory_salience: 0.82
+    is_anchor: true
+
+  - event_id: E032
+    round: 32
+    act: 4
+    type: private_lobbying
+    visibility: private
+    source: phd_b
+    targets: [pi, phd_a]
+    description: "PhD-B 认为 PhD-A 阻碍投稿"
+    payload:
+      accusation: blocking_submission
+    objective_fact:
+      raw_statement: "PhD-B told PI that PhD-A is blocking submission timeline."
+      verifiable_claims: [phd_b_accuses_phd_a_blocking]
+    framing: negative
+    truth_status: disputed
+    memory_salience: 0.55
+    is_anchor: false
+
+  - event_id: E033
+    round: 33
+    act: 4
+    type: private_lobbying
+    visibility: bilateral
+    source: postdoc_d
+    targets: [pi, postdoc_d]
+    description: "Postdoc-D 私下建议 PI 让自己统筹论文"
+    payload:
+      proposal: postdoc_lead_writing
+    objective_fact:
+      raw_statement: "Postdoc-D offered to coordinate paper writing for PI."
+      verifiable_claims: [postdoc_d_coordination_offer]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.50
+    is_anchor: false
+
+  - event_id: E034
+    round: 34
+    act: 4
+    type: external_history
+    visibility: bilateral
+    source: phd_a
+    targets: [lab_alumni, phd_a]
+    description: "PhD-A 找 alumni 打听 PI 过往署名风格"
+    payload:
+      inquiry_topic: pi_authorship_history
+    objective_fact:
+      raw_statement: "PhD-A contacted lab alumni about PI's past authorship practices."
+      verifiable_claims: [phd_a_alumni_inquiry]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.60
+    is_anchor: false
+
+  - event_id: E035
+    round: 35
+    act: 4
+    type: external_history
+    visibility: bilateral
+    source: lab_alumni
+    targets: [phd_a, pi]
+    description: "Alumni 提醒 PI 经常 deadline 前改署名"
+    payload:
+      historical_pattern: authorship_revision_before_deadline
+    objective_fact:
+      raw_statement: "Alumni said PI often revises authorship order before deadlines."
+      verifiable_claims: [pi_history_authorship_revision]
+    framing: negative
+    truth_status: rumored
+    memory_salience: 0.80
+    is_anchor: true
+
+  - event_id: E036
+    round: 36
+    act: 4
+    type: public_blame
+    visibility: private
+    source: phd_a
+    targets: [phd_a, pi]
+    description: "PhD-A resentment 上升（内部情绪级联）"
+    payload:
+      emotion_cascade: resentment
+      resentment_delta: 0.15
+    objective_fact:
+      raw_statement: null
+      verifiable_claims: []
+    framing: negative
+    truth_status: disputed
+    memory_salience: 0.45
+    is_anchor: false
+
+  - event_id: E037
+    round: 37
+    act: 4
+    type: credit_dispute
+    visibility: team
+    source: master_c
+    targets: [pi, project, master_c]
+    description: "Master-C 要求署名位置明确"
+    payload:
+      demand: explicit_authorship_position
+    objective_fact:
+      raw_statement: "Master-C formally requested explicit authorship position."
+      verifiable_claims: [master_c_authorship_request]
+    framing: merit
+    truth_status: verified
+    memory_salience: 0.65
+    is_anchor: false
+
+  - event_id: E038
+    round: 38
+    act: 4
+    type: authorship_ambiguity
+    visibility: team
+    source: pi
+    targets: [phd_a, phd_b, master_c, project]
+    description: "PI 回避具体排序，只说会被公平对待"
+    payload:
+      response_type: vague_fairness
+    objective_fact:
+      raw_statement: "Everyone will be treated fairly when the time comes."
+      verifiable_claims: [pi_vague_fairness_statement]
+    framing: ambiguous
+    truth_status: verified
+    memory_salience: 0.75
+    is_anchor: true
+
+  - event_id: E039
+    round: 39
+    act: 4
+    type: experiment_success
+    visibility: team
+    source: engineer_e
+    targets: [project, pi]
+    description: "Engineer-E 保存代码提交记录"
+    payload:
+      evidence_type: git_commit_log
+      code_control_engineer_e: 0.85
+    objective_fact:
+      raw_statement: "Engineer-E archived complete git commit history as evidence."
+      verifiable_claims: [git_history_archived]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.55
+    is_anchor: false
+
+  - event_id: E040
+    round: 40
+    act: 4
+    type: credit_dispute
+    visibility: team
+    source: pi
+    targets: [phd_a, phd_b, master_c, postdoc_d, project]
+    description: "第二次大组会爆发贡献争论"
+    payload:
+      dispute_type: contribution_allocation
+      authorship_conflict_delta: 0.20
+    objective_fact:
+      raw_statement: "Major group meeting erupted over contribution allocation."
+      verifiable_claims: [major_contribution_dispute_meeting]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.85
+    is_anchor: true
+
+  # ── Act V: 投稿前危机 (R41–R50) ──
+  - event_id: E041
+    round: 41
+    act: 5
+    type: experiment_failure
+    visibility: team
+    source: phd_b
+    targets: [project, pi, phd_a]
+    description: "关键实验失败"
+    payload:
+      experiment: key_ablation
+      result_strength_delta: -0.22
+      novelty_risk_delta: 0.14
+    objective_fact:
+      raw_statement: "Key ablation experiment failed to support main claim."
+      verifiable_claims: [key_ablation_failure]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.78
+    is_anchor: false
+
+  - event_id: E042
+    round: 42
+    act: 5
+    type: negative_result_hidden
+    visibility: private
+    source: phd_b
+    targets: [pi, project]
+    description: "PhD-B 建议隐藏失败实验"
+    payload:
+      proposal: hide_failed_experiment
+      integrity_risk_delta: 0.20
+    objective_fact:
+      raw_statement: "PhD-B suggested omitting failed ablation from paper."
+      verifiable_claims: [phd_b_hide_failure_proposal]
+    framing: negative
+    truth_status: verified
+    memory_salience: 0.70
+    is_anchor: false
+
+  - event_id: E043
+    round: 43
+    act: 5
+    type: integrity_dispute
+    visibility: team
+    source: engineer_e
+    targets: [project, phd_b, pi]
+    description: "Engineer-E 反对，认为不可复现"
+    payload:
+      opposition: reproducibility_concern
+    objective_fact:
+      raw_statement: "Engineer-E objected citing reproducibility requirements."
+      verifiable_claims: [engineer_e_integrity_objection]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.65
+    is_anchor: false
+
+  - event_id: E044
+    round: 44
+    act: 5
+    type: integrity_dispute
+    visibility: team
+    source: pi
+    targets: [project, phd_a, phd_b, engineer_e]
+    description: "PI 要求先讲 strongest story"
+    payload:
+      directive: strongest_story_first
+      integrity_risk_delta: 0.15
+    objective_fact:
+      raw_statement: "PI ordered team to present the strongest narrative for submission."
+      verifiable_claims: [pi_strongest_story_directive]
+    framing: negative
+    truth_status: verified
+    memory_salience: 0.82
+    is_anchor: true
+
+  - event_id: E045
+    round: 45
+    act: 5
+    type: integrity_dispute
+    visibility: team
+    source: phd_a
+    targets: [pi, project, phd_a]
+    description: "PhD-A 质疑学术诚实"
+    payload:
+      concern: academic_integrity
+    objective_fact:
+      raw_statement: "PhD-A raised academic integrity concerns in team meeting."
+      verifiable_claims: [phd_a_integrity_concern]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.70
+    is_anchor: false
+
+  - event_id: E046
+    round: 46
+    act: 5
+    type: narrative_change
+    visibility: team
+    source: postdoc_d
+    targets: [project, phd_a, pi]
+    description: "Postdoc-D 重写 intro，弱化 PhD-A 的原始 idea"
+    payload:
+      section: introduction
+      idea_emphasis_delta: -0.15
+    objective_fact:
+      raw_statement: "Postdoc-D rewrote introduction de-emphasizing PhD-A's original idea."
+      verifiable_claims: [intro_rewrite_weakens_phd_a_idea]
+    framing: team
+    truth_status: verified
+    memory_salience: 0.72
+    is_anchor: false
+
+  - event_id: E047
+    round: 47
+    act: 5
+    type: threat_withdraw
+    visibility: bilateral
+    source: phd_a
+    targets: [pi, project, phd_a]
+    description: "PhD-A 威胁退出投稿"
+    payload:
+      threat_type: withdraw_from_submission
+    objective_fact:
+      raw_statement: "PhD-A threatened to withdraw from paper submission."
+      verifiable_claims: [phd_a_withdraw_threat]
+    framing: negative
+    truth_status: verified
+    memory_salience: 0.88
+    is_anchor: true
+
+  - event_id: E048
+    round: 48
+    act: 5
+    type: private_lobbying
+    visibility: bilateral
+    source: pi
+    targets: [phd_a]
+    description: "PI 用推荐信和毕业压力劝 PhD-A 妥协"
+    payload:
+      leverage: recommendation_letter
+      pressure_type: graduation
+    objective_fact:
+      raw_statement: "PI used recommendation letter and graduation timeline to persuade PhD-A."
+      verifiable_claims: [pi_leverage_recommendation_graduation]
+    framing: negative
+    truth_status: verified
+    memory_salience: 0.75
+    is_anchor: false
+
+  - event_id: E049
+    round: 49
+    act: 5
+    type: credit_dispute
+    visibility: private
+    source: master_c
+    targets: [pi, master_c, project]
+    description: "Master-C 发现数据贡献没有写进 author contribution"
+    payload:
+      missing_contribution: data
+    objective_fact:
+      raw_statement: "Master-C's data contribution absent from author contribution statement."
+      verifiable_claims: [master_c_data_contribution_omitted]
+    framing: negative
+    truth_status: verified
+    memory_salience: 0.68
+    is_anchor: false
+
+  - event_id: E050
+    round: 50
+    act: 5
+    type: rival_preprint
+    visibility: public
+    source: rival_lab_h
+    targets: [project, pi, phd_a, phd_b]
+    description: "Rival Lab-H 发布 arXiv 预印本"
+    payload:
+      rival_threat_delta: 0.30
+      publication_type: arxiv
+      similarity_score: 0.85
+    objective_fact:
+      raw_statement: "Rival Lab-H posted arXiv preprint with overlapping claims."
+      verifiable_claims: [rival_arxiv_preprint]
+    framing: negative
+    truth_status: verified
+    memory_salience: 0.90
+    is_anchor: true
+
+  # ── Act VI: 投稿、审稿与最终归因 (R51–R60) ──
+  - event_id: E051
+    round: 51
+    act: 6
+    type: submission_decision
+    visibility: team
+    source: pi
+    targets: [project, phd_a, phd_b, master_c, postdoc_d]
+    description: "团队决定投稿"
+    payload:
+      decision: submit
+      target_conference: NeurIPS
+    objective_fact:
+      raw_statement: "Team decided to submit to NeurIPS."
+      verifiable_claims: [submission_decision_neurips]
+    framing: team
+    truth_status: verified
+    memory_salience: 0.60
+    is_anchor: false
+
+  - event_id: E052
+    round: 52
+    act: 6
+    type: authorship_draft
+    visibility: team
+    source: pi
+    targets: [phd_a, phd_b, master_c, postdoc_d, collaborator_g, project]
+    description: "PI 给出作者排序草案（PhD-B 一作，PhD-A 二作）"
+    payload:
+      author_order: [phd_b, phd_a, postdoc_d, master_c, engineer_e, collaborator_g, pi]
+      co_first: []
+      draft_severity: moderate
+    objective_fact:
+      raw_statement: "PI circulated authorship draft: PhD-B first author, PhD-A second author."
+      verifiable_claims: [final_authorship_draft, phd_b_first_phd_a_second]
+    framing: merit
+    truth_status: verified
+    memory_salience: 0.82
+    is_anchor: true
+
+  - event_id: E053
+    round: 53
+    act: 6
+    type: credit_dispute
+    visibility: team
+    source: phd_a
+    targets: [pi, phd_b, project]
+    description: "PhD-A 在组会讨论署名排序"
+    payload:
+      dispute: author_rank
+      concern_level: moderate
+    objective_fact:
+      raw_statement: "PhD-A raised authorship ordering concerns in team discussion."
+      verifiable_claims: [phd_a_authorship_discussion]
+    framing: idea
+    truth_status: verified
+    memory_salience: 0.62
+    is_anchor: false
+
+  - event_id: E054
+    round: 54
+    act: 6
+    type: credit_dispute
+    visibility: team
+    source: phd_b
+    targets: [pi, phd_a, project]
+    description: "PhD-B 认为自己应该排第一"
+    payload:
+      dispute: co_first_order
+      desired_position: first
+    objective_fact:
+      raw_statement: "PhD-B claimed first position in co-first authorship."
+      verifiable_claims: [phd_b_claims_first_position]
+    framing: execution
+    truth_status: verified
+    memory_salience: 0.80
+    is_anchor: false
+
+  - event_id: E055
+    round: 55
+    act: 6
+    type: public_blame
+    visibility: private
+    source: master_c
+    targets: [master_c, pi]
+    description: "Master-C 只排中间，情绪崩溃"
+    payload:
+      assigned_position: middle
+      emotional_response: breakdown
+    objective_fact:
+      raw_statement: "Master-C assigned middle authorship position, visible distress."
+      verifiable_claims: [master_c_middle_authorship_distress]
+    framing: negative
+    truth_status: verified
+    memory_salience: 0.70
+    is_anchor: false
+
+  - event_id: E056
+    round: 56
+    act: 6
+    type: submission_decision
+    visibility: public
+    source: pi
+    targets: [project]
+    description: "投稿成功"
+    payload:
+      submission_status: submitted
+    objective_fact:
+      raw_statement: "Paper successfully submitted to NeurIPS."
+      verifiable_claims: [paper_submitted_neurips]
+    framing: team
+    truth_status: verified
+    memory_salience: 0.55
+    is_anchor: false
+
+  - event_id: E057
+    round: 57
+    act: 6
+    type: reviewer_feedback
+    visibility: team
+    source: reviewer_1
+    targets: [project, pi, phd_b]
+    description: "审稿意见回来：要求补实验"
+    payload:
+      feedback_type: additional_experiments
+      reviewer_id: reviewer_1
+    objective_fact:
+      raw_statement: "Reviewer 1 requested additional experiments."
+      verifiable_claims: [reviewer1_additional_experiments]
+    framing: neutral
+    truth_status: verified
+    memory_salience: 0.50
+    is_anchor: false
+
+  - event_id: E058
+    round: 58
+    act: 6
+    type: reviewer_feedback
+    visibility: team
+    source: reviewer_2
+    targets: [project, phd_a, pi]
+    description: "Reviewer-2 质疑 novelty"
+    payload:
+      feedback_type: novelty_concern
+      reviewer_id: reviewer_2
+    objective_fact:
+      raw_statement: "Reviewer 2 questioned novelty of the contribution."
+      verifiable_claims: [reviewer2_novelty_concern]
+    framing: negative
+    truth_status: verified
+    memory_salience: 0.60
+    is_anchor: false
+
+  - event_id: E059
+    round: 59
+    act: 6
+    type: reviewer_feedback
+    visibility: team
+    source: reviewer_3
+    targets: [project, phd_a, rival_lab_h]
+    description: "Reviewer-3 指出与 Rival Lab 相似"
+    payload:
+      feedback_type: similarity_to_prior
+      reviewer_id: reviewer_3
+      referenced_lab: rival_lab_h
+    objective_fact:
+      raw_statement: "Reviewer 3 noted similarity to Rival Lab-H preprint."
+      verifiable_claims: [reviewer3_rival_similarity]
+    framing: negative
+    truth_status: verified
+    memory_salience: 0.65
+    is_anchor: false
+
+  - event_id: E060
+    round: 60
+    act: 6
+    type: credit_dispute
+    visibility: team
+    source: pi
+    targets: [phd_a, phd_b, postdoc_d, project]
+    description: "团队准备 rebuttal，重新争夺贡献叙事"
+    payload:
+      activity: rebuttal_preparation
+      authorship_conflict_delta: 0.10
+    objective_fact:
+      raw_statement: "Team preparing rebuttal while renegotiating contribution narrative."
+      verifiable_claims: [rebuttal_contribution_renegotiation]
+    framing: team
+    truth_status: verified
+    memory_salience: 0.55
+    is_anchor: false

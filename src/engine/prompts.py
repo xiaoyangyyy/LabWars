@@ -1,0 +1,175 @@
+"""LLM prompt builders for Role Policy and Memory agents."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from src.cognition.memory import RecallResult
+from src.engine.diversity import memory_action_hints, recent_action_history
+from src.world.models import Agent, EventAtom, RelationshipEdge, WorldState
+
+
+ROLE_POLICY_SYSTEM = """You are an agent in a long-horizon academic lab power-struggle simulation (LabWars).
+Choose actions ONLY from the allowed action list. Output valid JSON only — no markdown.
+
+Rules:
+1. Reflect personality, beliefs, emotions, recalled memories, and the current event.
+2. public_position = public stance; private_intent = true goal (may diverge).
+3. DIVERSITY: Do NOT repeat the same primary action type as your last 2 rounds unless the event is identical.
+4. If avoid_actions is non-empty, you MUST pick a different action type not in that list.
+5. Memory behavioral_hooks are soft suggestions only — vary tactics across rounds (research, political, communication).
+6. Match action type to event type when plausible (e.g. experiment_failure → debug_code/analyze_failure; authorship → lobby/confront/document).
+7. On authorship_draft: if beliefs.pi_fairness >= 0.55, prefer comply/privately_lobby_pi/delay_response before confront/rebel; if pi_fairness < 0.35, escalation is more likely."""
+
+
+MEMORY_INTERPRETATION_SYSTEM = """You are generating a first-person memory interpretation for an academic lab agent.
+One short sentence (max 30 words). Subjective, emotionally colored, consistent with valence.
+Vary wording across events — avoid repeating the same sentence template.
+Output JSON: {"interpretation": "..."}"""
+
+
+EVENT_ACTION_HINTS: dict[str, list[str]] = {
+    "authorship_promise": ["ask_for_authorship", "privately_lobby_pi", "document_contribution", "comply"],
+    "authorship_ambiguity": ["privately_lobby_pi", "ask_for_authorship", "confront", "delay_response"],
+    "authorship_draft": ["privately_lobby_pi", "ask_for_authorship", "comply", "delay_response", "confront", "document_contribution"],
+    "experiment_success": ["share_result", "write_section", "run_experiment", "support_teammate"],
+    "experiment_failure": ["analyze_failure", "debug_code", "share_result", "blame"],
+    "public_praise": ["support_teammate", "confront", "document_contribution", "undermine_teammate"],
+    "credit_dispute": ["challenge_claim", "confront", "document_contribution", "privately_lobby_pi"],
+    "team_meeting": ["share_result", "write_section", "comply", "form_alliance"],
+    "deadline_shift": ["run_experiment", "write_section", "delay_response", "privately_lobby_pi"],
+}
+
+
+def _event_action_hints(agent: Agent, event: EventAtom) -> list[str]:
+    hints = list(EVENT_ACTION_HINTS.get(event.type, []))
+    if event.type != "authorship_draft" or agent.id != "phd_a":
+        return hints
+    fairness = agent.beliefs.pi_fairness
+    if fairness >= 0.55:
+        return ["comply", "privately_lobby_pi", "delay_response", "document_contribution", "ask_for_authorship", "confront"]
+    if fairness < 0.35:
+        return ["confront", "rebel", "challenge_claim", "withdraw", "ask_for_authorship", "privately_lobby_pi"]
+    return hints
+
+
+def _top_memories(agent: Agent, recall: RecallResult | None, k: int = 5) -> list[dict[str, Any]]:
+    if not recall or not recall.attention_weights:
+        return []
+    ranked = sorted(recall.attention_weights.items(), key=lambda x: x[1], reverse=True)[:k]
+    out = []
+    for mem_id, weight in ranked:
+        mem = next((m for m in agent.memory if m.get("memory_id") == mem_id), None)
+        if mem:
+            out.append({
+                "memory_id": mem_id,
+                "attention": round(weight, 4),
+                "event_ref": mem.get("event_ref"),
+                "content_type": mem.get("content_type"),
+                "strength": mem.get("strength"),
+                "valence": mem.get("valence"),
+                "interpretation": mem.get("interpretation"),
+            })
+    return out
+
+
+def _relationship_summary(agent_id: str, edges: list[RelationshipEdge], top_n: int = 4) -> list[dict[str, Any]]:
+    relevant = [e for e in edges if e.source == agent_id or e.target == agent_id]
+    relevant.sort(key=lambda e: e.perceived_credit_threat + e.resentment, reverse=True)
+    out = []
+    for e in relevant[:top_n]:
+        other = e.target if e.source == agent_id else e.source
+        out.append({
+            "other": other,
+            "trust": round(e.trust, 3),
+            "resentment": round(e.resentment, 3),
+            "credit_threat": round(e.perceived_credit_threat, 3),
+        })
+    return out
+
+
+def build_role_policy_prompt(
+    agent: Agent,
+    event: EventAtom,
+    world: WorldState,
+    recall: RecallResult | None,
+    allowed_actions: list[str],
+    *,
+    avoid_actions: list[str] | None = None,
+    retry_note: str = "",
+    validation_error: str = "",
+) -> str:
+    state = {
+        "agent_id": agent.id,
+        "role": agent.role.value,
+        "round": event.round,
+        "personality": agent.personality.model_dump(),
+        "beliefs": agent.beliefs.model_dump(),
+        "emotion": agent.emotion.model_dump(),
+        "resources": agent.resources.model_dump(),
+    }
+    event_block = {
+        "event_id": event.event_id,
+        "type": event.type,
+        "source": event.source,
+        "targets": event.targets,
+        "framing": event.framing,
+        "memory_salience": event.memory_salience,
+        "objective_fact": event.objective_fact.raw_statement,
+        "payload": event.payload,
+    }
+    payload = {
+        "state": state,
+        "recent_action_history": recent_action_history(agent, n=5),
+        "avoid_actions": avoid_actions or [],
+        "memory_soft_hooks": memory_action_hints(agent, recall),
+        "event_action_hints": _event_action_hints(agent, event),
+        "recalled_memories": _top_memories(agent, recall),
+        "recall_field": {
+            "valence": recall.recall_field_valence if recall else 0.0,
+            "strength": recall.recall_field_strength if recall else 0.0,
+        },
+        "current_event": event_block,
+        "relationship_summary": _relationship_summary(agent.id, world.relationships),
+        "allowed_actions": allowed_actions,
+        "retry_note": retry_note,
+        "validation_error": validation_error,
+        "output_schema": {
+            "primary_action": {"type": "string from allowed_actions", "target": "agent_id", "intensity": "0.0-1.0"},
+            "communication_action": {"type": "string", "target": "agent_id", "content_summary": "string"},
+            "public_position": {"statement_type": "team_support|self_advocacy|neutral", "authorship_claim": "string"},
+            "private_intent": {"goal": "string", "strategy": "string", "trust_pi": "0.0-1.0"},
+        },
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def build_memory_interpretation_prompt(
+    agent: Agent,
+    event: EventAtom,
+    valence: float,
+    content_type: str,
+) -> str:
+    recent_interp = [
+        m.get("interpretation", "")[:80]
+        for m in agent.memory[-3:]
+        if m.get("interpretation")
+    ]
+    return json.dumps({
+        "agent_id": agent.id,
+        "role": agent.role.value,
+        "event_id": event.event_id,
+        "event_type": event.type,
+        "content_type": content_type,
+        "valence": round(valence, 3),
+        "framing": event.framing,
+        "objective_fact": event.objective_fact.raw_statement,
+        "beliefs": agent.beliefs.model_dump(),
+        "emotion": {
+            "anger": agent.emotion.anger,
+            "resentment": agent.emotion.resentment,
+            "anxiety": agent.emotion.anxiety,
+        },
+        "avoid_repeating_phrases": recent_interp,
+    }, ensure_ascii=False, indent=2)

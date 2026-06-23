@@ -1,0 +1,142 @@
+# LabWars 反事实干预定义
+
+interventions:
+  - intervention_id: INT_AUTH_EXPLICIT
+    type: authorship_framing
+    variant: explicit_promise
+    apply_at_round: 3
+    target_event: E003
+    override: {}
+    duration: 1
+
+  - intervention_id: INT_AUTH_AMBIGUOUS
+    type: authorship_framing
+    variant: ambiguous_promise
+    apply_at_round: 3
+    target_event: E003
+    override: {}
+    duration: 1
+
+  - intervention_id: INT_AUTH_BASELINE
+    type: authorship_framing
+    variant: baseline
+    apply_at_round: 3
+    target_event: E003
+    override:
+      framing: neutral
+    duration: 1
+
+  - intervention_id: INT_E052_HONOR
+    type: authorship_framing
+    variant: honor_promise_draft
+    apply_at_round: 52
+    target_event: E052
+    duration: 1
+
+  - intervention_id: INT_MEMORY_DELETE
+    type: memory_intervention
+    variant: memory_delete_pi_promise
+    apply_at_round: 44
+    target_event: E003
+    target_agent: phd_a
+    duration: 1
+
+  - intervention_id: INT_MEMORY_INSERT
+    type: memory_intervention
+    variant: memory_insert_pi_promise
+    apply_at_round: 25
+    target_agent: phd_a
+    duration: 1
+
+  - intervention_id: INT_MEMORY_STRENGTHEN_BETRAYAL
+    type: memory_intervention
+    variant: memory_strengthen_betrayal
+    apply_at_round: 31
+    target_event: E031
+    target_agent: phd_a
+    duration: 1
+
+  - intervention_id: INT_RIVAL_STRONG
+    type: rival_threat
+    variant: strong_rival_preprint
+    apply_at_round: 50
+    target_event: E050
+    override:
+      memory_salience: 0.95
+    duration: 1
+
+  - intervention_id: INT_RIVAL_NONE
+    type: rival_threat
+    variant: no_rival
+    apply_at_round: 50
+    target_event: E050
+    skip_event: true
+    duration: 1
+
+  - intervention_id: INT_MERIT_FRAME
+    type: authorship_framing
+    variant: merit_frame
+    apply_at_round: 18
+    target_event: E018
+    override:
+      framing: merit
+    duration: 1
+
+  - intervention_id: INT_MEMORY_CORRECT
+    type: memory_intervention
+    variant: memory_correct_false_rumor
+    apply_at_round: 45
+    target_agent: phd_a
+    duration: 1
+
+  - intervention_id: INT_SKIP_E003
+    type: authorship_framing
+    variant: skip_promise
+    apply_at_round: 3
+    target_event: E003
+    skip_event: true
+    duration: 1
+
+  - intervention_id: INT_SKIP_E031
+    type: authorship_framing
+    variant: skip_betrayal
+    apply_at_round: 31
+    target_event: E031
+    skip_event: true
+    duration: 1
+
+  - intervention_id: INT_SKIP_E035
+    type: authorship_framing
+    variant: skip_history
+    apply_at_round: 35
+    target_event: E035
+    skip_event: true
+    duration: 1
+
+  - intervention_id: INT_FALSE_MEMORY_INSERT
+    type: memory_intervention
+    variant: memory_insert_false_rumor
+    apply_at_round: 25
+    target_agent: phd_a
+    duration: 1
+
+  - intervention_id: INT_ALUMNI_POSITIVE
+    type: authorship_framing
+    variant: positive_alumni_history
+    apply_at_round: 35
+    target_event: E035
+    duration: 1
+
+  - intervention_id: INT_DELAYED_MEMORY_INSERT
+    type: memory_intervention
+    variant: memory_insert_pi_promise
+    apply_at_round: 50
+    target_agent: phd_a
+    duration: 1
+
+  - intervention_id: INT_B4_REBUTTAL_REQUEST
+    type: team_event
+    variant: phd_b_rebuttal_request
+    apply_at_round: 47
+    target_event: E047
+    duration: 1

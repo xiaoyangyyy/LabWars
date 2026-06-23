@@ -1,0 +1,65 @@
+# LabWars 事件→状态连续影响签名
+# 所有影响通过 pipeline 中的解析器转为连续 impulse，不使用阈值触发
+
+event_signatures:
+  public_praise:
+    emotion: {confidence: 0.12, hope: 0.05}
+    belief: {my_contribution_recognized: 0.15}
+    relationship: {trust_delta: 0.10, credit_threat_spillover: 0.08}
+
+  authorship_ambiguity:
+    emotion: {anxiety: 0.15, anger: 0.10}
+    belief: {pi_fairness: -0.20, my_first_author_probability: -0.15}
+    memory_content_type: authorship_signal
+
+  authorship_promise:
+    emotion: {hope: 0.12, confidence: 0.08}
+    belief: {pi_fairness: 0.15, my_first_author_probability: 0.18}
+    memory_content_type: promise_fulfilled
+
+  rival_preprint:
+    emotion: {anxiety: 0.12, fear: 0.08}
+    belief: {rival_lab_threat: 0.25, deadline_feasibility: -0.08}
+    project: {rival_threat_delta: 0.25}
+
+  credit_dispute:
+    emotion: {anger: 0.18, resentment: 0.12}
+    belief: {team_trust: -0.12}
+    project: {authorship_conflict_delta: 0.15}
+
+  external_history:
+    emotion: {fear: 0.10, resentment: 0.05}
+    belief: {pi_fairness: -0.20}
+    memory_content_type: historical_pattern
+
+  integrity_dispute:
+    emotion: {guilt: 0.08, anxiety: 0.10}
+    belief: {academic_integrity_risk: 0.15}
+    project: {integrity_risk_delta: 0.12}
+
+dynamics:
+  memory:
+    model: resonance_field
+    recall: softmax_attention
+    decay: emotional_binding_exponential
+    valence: contrastive_predictive_coding
+
+  emotion:
+    model: antagonistic_homeostasis
+    coupling: competitive_inhibition_pairs
+    project_input: impulse_response
+
+  belief:
+    model: precision_weighted_predictive_coding
+    prior_precision: personality_modulated
+
+  relationship:
+    model: signed_graph_diffusion
+    credit_threat: ledger_jacobian
+
+  authorship:
+    model: soft_power_ranking
+    pi_override: logistic_deadline_gate
+
+  divergence:
+    model: stance_vector_cosine

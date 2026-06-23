@@ -1,0 +1,24 @@
+# LabWars MVP 配置 — 5 agent × 20 轮（Act I + Act II 核心）
+
+name: labwars_mvp
+max_rounds: 20
+
+active_agents:
+  - pi
+  - phd_a
+  - phd_b
+  - engineer_e
+  - master_c
+
+offstage_agents:
+  - rival_lab_h
+
+default_interventions:
+  - INT_AUTH_EXPLICIT
+  - INT_AUTH_AMBIGUOUS
+  - INT_MEMORY_DELETE
+
+primary_outcomes:
+  - protest_authorship
+  - document_contribution_count
+  - authorship_dispute_index

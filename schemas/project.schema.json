@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://labwars.local/schemas/project.schema.json",
+  "title": "LabWars Project State",
+  "type": "object",
+  "required": [
+    "project",
+    "contribution_ledger",
+    "author_order_draft",
+    "submission_status",
+    "current_round"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "type": "object",
+      "required": [
+        "idea_clarity",
+        "experimental_strength",
+        "code_stability",
+        "writing_quality",
+        "novelty_risk",
+        "baseline_coverage",
+        "deadline_pressure",
+        "rival_threat",
+        "funding_pressure",
+        "authorship_conflict",
+        "team_morale"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "idea_clarity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "experimental_strength": { "type": "number", "minimum": 0, "maximum": 1 },
+        "code_stability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "writing_quality": { "type": "number", "minimum": 0, "maximum": 1 },
+        "novelty_risk": { "type": "number", "minimum": 0, "maximum": 1 },
+        "baseline_coverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "deadline_pressure": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rival_threat": { "type": "number", "minimum": 0, "maximum": 1 },
+        "funding_pressure": { "type": "number", "minimum": 0, "maximum": 1 },
+        "authorship_conflict": { "type": "number", "minimum": 0, "maximum": 1 },
+        "team_morale": { "type": "number", "minimum": 0, "maximum": 1 },
+        "integrity_risk": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "contribution_ledger": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "author_order_draft": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "submission_status": {
+      "type": "string",
+      "enum": ["not_started", "in_progress", "submitted", "under_review", "accepted", "rejected"]
+    },
+    "current_round": { "type": "integer", "minimum": 0, "maximum": 80 },
+    "target_conference": { "type": "string" }
+  }
+}
