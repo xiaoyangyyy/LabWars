@@ -202,13 +202,13 @@ def update_beliefs(
             total_prec += prec
         beliefs[key] = round(clamp(fused_obs), 4)
 
-    if agent.emotion.resentment < 0.62 and beliefs["pi_fairness"] < 0.55:
-        anchor = 0.38 + agent.personality.reciprocity * 0.18
-        cluster = authorship_memory_cluster(agent, round_min=1, round_max=event.round, current_round=event.round)
-        if cluster > 0.8:
-            anchor += 0.12
+    cluster = authorship_memory_cluster(agent, round_min=1, round_max=event.round, current_round=event.round)
+    if cluster > 0.45 and agent.emotion.resentment < 0.58 and beliefs["pi_fairness"] < 0.52:
+        anchor = 0.30 + agent.personality.reciprocity * 0.14
+        if cluster > 1.0:
+            anchor += 0.08
         beliefs["pi_fairness"] = round(
-            clamp(beliefs["pi_fairness"] + (anchor - beliefs["pi_fairness"]) * 0.025),
+            clamp(beliefs["pi_fairness"] + (anchor - beliefs["pi_fairness"]) * 0.012),
             4,
         )
 

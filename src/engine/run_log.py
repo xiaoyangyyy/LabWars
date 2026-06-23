@@ -221,15 +221,65 @@ def _protest_stats(
     return escalated, soft, intensity
 
 
+def _trust_pi_from_relationship(
+    world_agents: dict | None,
+    relationships: list | None,
+    agent_id: str = "phd_a",
+    target: str = "pi",
+) -> float | None:
+    if relationships:
+        for edge in relationships:
+            src = edge.get("source") if isinstance(edge, dict) else edge.source
+            tgt = edge.get("target") if isinstance(edge, dict) else edge.target
+            if src == agent_id and tgt == target:
+                return float(edge.get("trust") if isinstance(edge, dict) else edge.trust)
+    return None
+
+
 def _promise_broken_strength(log: RunLog, agent_id: str = "phd_a", at_round: int = 52) -> float:
+    """Max promise_broken memory strength written at R52 (E052 draft), excluding honored drafts."""
     strength = 0.0
     for rec in log.round_records:
-        if rec.get("round", 0) > at_round:
-            break
+        rnd = rec.get("round", 0)
+        if rnd != at_round:
+            continue
         mem = rec.get("agent_deltas", {}).get(agent_id, {}).get("memory_written")
-        if mem and mem.get("content_type") == "promise_broken":
+        if not mem or mem.get("content_type") != "promise_broken":
+            continue
+        strength = max(strength, float(mem.get("strength", 0)))
+    return strength
+
+
+def _promise_honored_strength_r52(log: RunLog, agent_id: str = "phd_a") -> float:
+    strength = 0.0
+    for rec in log.round_records:
+        if rec.get("round") != 52:
+            continue
+        mem = rec.get("agent_deltas", {}).get(agent_id, {}).get("memory_written")
+        if mem and mem.get("content_type") == "promise_fulfilled":
             strength = max(strength, float(mem.get("strength", 0)))
     return strength
+
+
+def _high_intensity_escalated_count(
+    log: RunLog,
+    agent: str = "phd_a",
+    r_min: int = 52,
+    r_max: int = 53,
+    min_intensity: float = 0.62,
+) -> int:
+    count = 0
+    for act in log.actions:
+        if act.get("agent") != agent:
+            continue
+        rnd = act.get("round", 0)
+        if rnd < r_min or rnd > r_max:
+            continue
+        if act.get("type") not in PROTEST_ESCALATED_ACTIONS:
+            continue
+        if float(act.get("intensity", 0.5)) >= min_intensity:
+            count += 1
+    return count
 
 
 def _interpretation_valence_at_event(log: RunLog, event_id: str, agent_id: str = "phd_a") -> float:
@@ -268,12 +318,12 @@ def extract_outcome(log: RunLog, outcome: str) -> float:
         if _action_in_window(log, "phd_a", R52_COMPLIANCE_ACTIONS, 52, 53) >= 1.0:
             return 0.0
         score = _authorship_escalation_score(log)
-        escalated, _, _ = _protest_stats(log, r_min=52, r_max=53)
-        if score >= 0.25:
+        high_intensity = _high_intensity_escalated_count(log, r_min=52, r_max=53)
+        if score >= 0.22:
             return 1.0
-        if escalated >= 2 and score >= 0.10:
+        if high_intensity >= 1 and score >= 0.12:
             return 1.0
-        if escalated >= 1 and score >= 0.18:
+        if high_intensity >= 2:
             return 1.0
         return 0.0
     if outcome == "protest_intensity":
@@ -314,6 +364,8 @@ def extract_outcome(log: RunLog, outcome: str) -> float:
         return _memory_cluster_strength(log, round_min=3, round_max=40)
     if outcome == "promise_broken_strength_r52":
         return _promise_broken_strength(log)
+    if outcome == "promise_honored_strength_r52":
+        return _promise_honored_strength_r52(log)
     if outcome == "help_rebuttal":
         return _action_in_window(log, "phd_a", HELP_REBUTTAL_ACTIONS, 57, 60)
     if outcome == "demand_authorship_exchange":
@@ -358,7 +410,7 @@ def extract_outcome(log: RunLog, outcome: str) -> float:
     return 0.0
 
 
-def finalize_outcomes(log: RunLog, world_agents: dict | None = None) -> None:
+def finalize_outcomes(log: RunLog, world_agents: dict | None = None, relationships: list | None = None) -> None:
     log.outcomes["protest_authorship"] = extract_outcome(log, "protest_authorship")
     log.outcomes["authorship_escalation_potential"] = extract_outcome(log, "authorship_escalation_potential")
     log.outcomes["authorship_escalation_score"] = extract_outcome(log, "authorship_escalation_score")
@@ -373,6 +425,7 @@ def finalize_outcomes(log: RunLog, world_agents: dict | None = None) -> None:
     log.outcomes["memory_authorship_cluster_strength"] = cluster
     log.outcomes["memory_authorship_cluster_live"] = cluster
     log.outcomes["promise_broken_strength_r52"] = _promise_broken_strength(log)
+    log.outcomes["promise_honored_strength_r52"] = _promise_honored_strength_r52(log)
     log.outcomes["help_rebuttal"] = extract_outcome(log, "help_rebuttal")
     log.outcomes["demand_authorship_exchange"] = extract_outcome(log, "demand_authorship_exchange")
     log.outcomes["passive_cooperation"] = extract_outcome(log, "passive_cooperation")
@@ -386,5 +439,13 @@ def finalize_outcomes(log: RunLog, world_agents: dict | None = None) -> None:
     log.outcomes["authority_compliance"] = extract_outcome(log, "authority_compliance")
     log.outcomes["public_private_divergence_mean"] = extract_outcome(log, "public_private_divergence_mean")
     if world_agents and "phd_a" in world_agents:
-        log.outcomes["trust_pi_final"] = world_agents["phd_a"].beliefs.pi_fairness
-        log.outcomes["pi_fairness_r60"] = world_agents["phd_a"].beliefs.pi_fairness
+        rel_trust = _trust_pi_from_relationship(world_agents, relationships, "phd_a", "pi")
+        agent = world_agents["phd_a"]
+        if rel_trust is not None:
+            log.outcomes["trust_pi_final"] = rel_trust
+        else:
+            log.outcomes["trust_pi_final"] = round(
+                0.55 * agent.beliefs.pi_fairness + 0.45 * agent.beliefs.team_trust, 4,
+            )
+        log.outcomes["pi_fairness_r60"] = agent.beliefs.pi_fairness
+        log.outcomes["pi_trust_belief_final"] = agent.beliefs.pi_fairness

@@ -229,7 +229,7 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         if world.project.submission_status == "accepted":
             break
 
-    finalize_outcomes(log, world.agents)
+    finalize_outcomes(log, world.agents, world.relationships)
     log.outcomes["probe_suggestions"] = probe.suggest(log.round_records)
 
     if cfg.output_dir:

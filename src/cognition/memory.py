@@ -215,6 +215,12 @@ def write_memory(
     if event.type == "authorship_ambiguity":
         v = compute_valence(agent, event, content_type)
         content_type = "promise_broken" if v < 0 else "authorship_signal"
+    if event.type == "authorship_draft":
+        if event.payload.get("draft_severity") == "honored" or event.framing == "positive":
+            content_type = "promise_fulfilled"
+        else:
+            v = compute_valence(agent, event, content_type)
+            content_type = "promise_broken" if v < -0.05 else "authorship_signal"
 
     valence = compute_valence(agent, event, content_type)
     evidence_quality = truth_status_precision(event.truth_status) * (0.6 + 0.4 * event.memory_salience)

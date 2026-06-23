@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
-from src.engine.causal import run_causal_experiment
 from src.experiments.conditions import EXPERIMENT_A, list_conditions
 from src.experiments.runner import run_single
 
@@ -15,6 +15,8 @@ PRIMARY_OUTCOMES = [
     "authorship_escalation_potential",
     "post_r52_compliance",
     "memory_authorship_cluster_strength",
+    "promise_broken_strength_r52",
+    "promise_honored_strength_r52",
 ]
 MEDIATORS = ["memory_authorship_cluster_strength", "promise_broken_strength_r52"]
 
@@ -27,12 +29,23 @@ def run_all_conditions(seed: int, **kwargs: Any) -> dict[str, Any]:
     return {cid: run_condition(cid, seed, **kwargs) for cid in list_conditions("A")}
 
 
+def _explicit_betrayal_condition():
+    """Explicit promise at R3, default betrayal draft at R52 (no honor intervention)."""
+    base = EXPERIMENT_A["A5"]
+    return replace(
+        base,
+        condition_id="A_explicit_betrayal",
+        label="explicit_betrayal",
+        intervention_ids=["INT_AUTH_EXPLICIT"],
+    )
+
+
 def run_causal_delete_vs_explicit(n_seeds: int = 10, *, max_rounds: int = 60) -> dict[str, Any]:
-    """Compare A2 (explicit promise) vs A5 (explicit + R45 memory delete)."""
+    """Compare explicit+memory-delete vs explicit-only, both with betrayal draft at R52."""
     from src.engine.simulation import run_simulation
     from src.experiments.conditions import build_sim_config, get_condition
 
-    explicit = get_condition("A", "A2")
+    explicit = _explicit_betrayal_condition()
     deleted = get_condition("A", "A5")
     per_seed: list[dict[str, Any]] = []
 
@@ -49,18 +62,23 @@ def run_causal_delete_vs_explicit(n_seeds: int = 10, *, max_rounds: int = 60) ->
             "cluster_treatment": treat_log.outcomes.get("memory_authorship_cluster_strength", 0),
             "trust_pi_control": ctrl_log.outcomes.get("trust_pi_final", 0),
             "trust_pi_treatment": treat_log.outcomes.get("trust_pi_final", 0),
+            "promise_broken_control": ctrl_log.outcomes.get("promise_broken_strength_r52", 0),
+            "promise_broken_treatment": treat_log.outcomes.get("promise_broken_strength_r52", 0),
         })
 
     def _mean(key: str) -> float:
         return sum(p[key] for p in per_seed) / len(per_seed) if per_seed else 0.0
 
     return {
-        "comparison": "A5 (explicit+delete) vs A2 (explicit)",
+        "comparison": "A5 (explicit+delete+betrayal) vs explicit-only+betrayal",
+        "control_interventions": explicit.intervention_ids,
+        "treatment_interventions": deleted.intervention_ids,
         "n_seeds": n_seeds,
         "ate_protest_intensity": _mean("protest_intensity_treatment") - _mean("protest_intensity_control"),
         "ate_protest_authorship": _mean("protest_authorship_treatment") - _mean("protest_authorship_control"),
         "ate_cluster": _mean("cluster_treatment") - _mean("cluster_control"),
         "ate_trust_pi": _mean("trust_pi_treatment") - _mean("trust_pi_control"),
+        "ate_promise_broken_r52": _mean("promise_broken_treatment") - _mean("promise_broken_control"),
         "per_seed": per_seed,
     }
 

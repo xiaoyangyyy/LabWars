@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -18,7 +19,7 @@ from src.experiments.exp_a_promise import run_causal_delete_vs_explicit
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Experiment A across multiple seeds and aggregate.")
-    parser.add_argument("--seeds", type=int, default=10, help="Number of seeds (0..N-1)")
+    parser.add_argument("--seeds", type=int, default=5, help="Number of seeds (0..N-1)")
     parser.add_argument("--seed-start", type=int, default=0, help="First seed value")
     parser.add_argument("--conditions", nargs="*", default=None, help="Condition ids, default all A1-A5")
     parser.add_argument("--max-rounds", type=int, default=60)
@@ -92,18 +93,38 @@ def main() -> int:
         md_lines.append("")
 
     comparisons = {}
-    for outcome in ("authorship_escalation_score", "authorship_escalation_potential", "memory_authorship_cluster_strength"):
-        if "A2" in conditions and "A5" in conditions:
-            comparisons[outcome] = compare_conditions(summary_path, "A2", "A5", outcome=outcome)
+    comparison_specs = [
+        ("A3", "A5", "A5 vs A3 (explicit+delete vs ambiguous, both betrayal draft)"),
+        ("A1", "A2", "A2 vs A1 (explicit+honor vs baseline)"),
+    ]
+    for cond_a, cond_b, label in comparison_specs:
+        if cond_a in conditions and cond_b in conditions:
+            block: dict[str, Any] = {"label": label}
+            for outcome in (
+                "authorship_escalation_score",
+                "authorship_escalation_potential",
+                "memory_authorship_cluster_strength",
+                "protest_authorship",
+                "trust_pi_final",
+            ):
+                block[outcome] = compare_conditions(summary_path, cond_a, cond_b, outcome=outcome)
+            comparisons[f"{cond_a}_vs_{cond_b}"] = block
     if comparisons:
-        md_lines.append("## A5 vs A2 (explicit + delete vs explicit)")
+        md_lines.append("## Condition comparisons")
         md_lines.append("")
-        for outcome, cmp in comparisons.items():
-            md_lines.append(
-                f"- **{outcome}**: A2={cmp['a_mean']:.3f}, A5={cmp['b_mean']:.3f}, "
-                f"Δ={cmp['ate_b_minus_a']:+.3f}, t={cmp['welch_t']:.2f}"
-            )
-        cmp_path = report_dir / "compare_A2_A5.json"
+        for key, block in comparisons.items():
+            md_lines.append(f"### {block['label']}")
+            md_lines.append("")
+            for outcome, cmp in block.items():
+                if outcome == "label":
+                    continue
+                md_lines.append(
+                    f"- **{outcome}**: {cmp['condition_a']}={cmp['a_mean']:.3f}, "
+                    f"{cmp['condition_b']}={cmp['b_mean']:.3f}, "
+                    f"Δ={cmp['ate_b_minus_a']:+.3f}, t={cmp['welch_t']:.2f}"
+                )
+            md_lines.append("")
+        cmp_path = report_dir / "compare_conditions.json"
         cmp_path.write_text(json.dumps(comparisons, indent=2, ensure_ascii=False), encoding="utf-8")
 
     md_path = report_dir / "aggregate_A_multi.md"

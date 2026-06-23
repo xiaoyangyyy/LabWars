@@ -28,6 +28,7 @@ ANALYSIS_OUTCOMES = [
     "memory_authorship_cluster_strength",
     "authorship_dispute_index",
     "promise_broken_strength_r52",
+    "promise_honored_strength_r52",
 ]
 
 
