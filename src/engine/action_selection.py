@@ -1,17 +1,26 @@
-"""Continuous action field for probabilistic behavior generation."""
+﻿"""Continuous action field for probabilistic behavior generation."""
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import math
 import random
+from functools import lru_cache
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
+
+import yaml
 
 from src.cognition.memory import RecallResult
 from src.engine.diversity import action_usage_counts
 from src.world.actions import ACTION_CATEGORIES, ActionType
 from src.world.models import Agent, EventAtom, RelationshipEdge, WorldState
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ACTION_FIELD_CONFIG = PROJECT_ROOT / "config" / "action_field.yaml"
+ACTION_FIELD_OVERRIDE: dict[str, Any] | None = None
 
 
 @dataclass
@@ -22,6 +31,7 @@ class ActionCandidate:
     probability: float = 0.0
     intensity: float = 0.5
     motives: dict[str, float] = field(default_factory=dict)
+    parameter_source: str = "code_default"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -245,6 +255,76 @@ EVENT_AFFINITY: dict[str, dict[str, float]] = {
 }
 
 
+DEFAULT_ACTION_FIELD_PARAMS = {
+    "baseline_tendency": 0.10,
+    "repetition_penalty": 0.045,
+    "avoided_action_penalty": 0.08,
+    "emotional_action_bonus": 0.05,
+    "talk_to_alumni_time_penalty": 0.08,
+    "noise_amplitude": 0.015,
+    "min_tendency": -0.40,
+    "intensity_base": 0.30,
+    "intensity_scale": 0.60,
+    "intensity_center": 0.18,
+    "intensity_steepness": 3.20,
+    "temperature_base": 0.20,
+    "temperature_arousal_scale": 0.22,
+    "temperature_arousal_norm": 1.50,
+}
+
+
+@lru_cache(maxsize=1)
+def load_action_field_config() -> dict[str, Any]:
+    """Load calibratable action-field parameters from config/action_field.yaml."""
+    if not ACTION_FIELD_CONFIG.exists():
+        return {
+            "action_field": dict(DEFAULT_ACTION_FIELD_PARAMS),
+            "motive_weights": ACTION_MOTIVE_WEIGHTS,
+            "event_affinity": EVENT_AFFINITY,
+            "source": "code_default",
+        }
+    data = yaml.safe_load(ACTION_FIELD_CONFIG.read_text(encoding="utf-8")) or {}
+    params = {**DEFAULT_ACTION_FIELD_PARAMS, **(data.get("action_field") or {})}
+    return {
+        "action_field": params,
+        "motive_weights": data.get("motive_weights") or ACTION_MOTIVE_WEIGHTS,
+        "event_affinity": data.get("event_affinity") or EVENT_AFFINITY,
+        "source": str(ACTION_FIELD_CONFIG),
+    }
+
+
+def reset_action_field_config_cache() -> None:
+    """Test/calibration helper: reload action-field YAML on next call."""
+    load_action_field_config.cache_clear()
+
+def set_action_field_override(override: dict[str, Any] | None) -> None:
+    """Install an in-memory action-field override for calibration/ablation runs."""
+    global ACTION_FIELD_OVERRIDE
+    ACTION_FIELD_OVERRIDE = copy.deepcopy(override) if override else None
+
+
+def clear_action_field_override() -> None:
+    """Clear any in-memory action-field override."""
+    set_action_field_override(None)
+
+
+def get_action_field_config() -> dict[str, Any]:
+    """Return YAML parameters merged with optional calibration/ablation overrides."""
+    base = copy.deepcopy(load_action_field_config())
+    if not ACTION_FIELD_OVERRIDE:
+        return base
+    override = ACTION_FIELD_OVERRIDE
+    if override.get("action_field"):
+        base["action_field"].update(override["action_field"])
+    if override.get("motive_weights"):
+        for action, weights in override["motive_weights"].items():
+            base["motive_weights"].setdefault(action, {}).update(weights)
+    if override.get("event_affinity"):
+        for event_type, weights in override["event_affinity"].items():
+            base["event_affinity"].setdefault(event_type, {}).update(weights)
+    base["source"] = "runtime_override"
+    return base
+
 def generate_action_candidates(
     agent: Agent,
     event: EventAtom,
@@ -256,6 +336,11 @@ def generate_action_candidates(
     seed: int = 0,
     top_n: int = 8,
 ) -> list[ActionCandidate]:
+    cfg = get_action_field_config()
+    params = cfg["action_field"]
+    motive_weights = cfg["motive_weights"]
+    event_affinity = cfg["event_affinity"]
+    source = cfg["source"]
     avoid = set(avoid_actions or [])
     candidates: list[ActionCandidate] = []
     rng = _stable_rng(seed, event.round, agent.id)
@@ -263,27 +348,32 @@ def generate_action_candidates(
     for action in allowed_actions:
         target = _target_for_action(action, agent, world, event)
         motives = _base_motives(agent, world, event, target, recall)
-        weights = ACTION_MOTIVE_WEIGHTS.get(action, {})
-        tendency = 0.10
+        weights = motive_weights.get(action, {})
+        tendency = float(params["baseline_tendency"])
         tendency += sum(motives.get(name, 0.0) * weight for name, weight in weights.items())
-        tendency += EVENT_AFFINITY.get(event.type, {}).get(action, 0.0)
-        tendency -= 0.045 * recent_counts.get(action, 0)
+        tendency += event_affinity.get(event.type, {}).get(action, 0.0)
+        tendency -= float(params["repetition_penalty"]) * recent_counts.get(action, 0)
         if action in avoid:
-            tendency -= 0.08
+            tendency -= float(params["avoided_action_penalty"])
         if action == "talk_to_alumni":
             time_open = _sigmoid((event.round / 60.0) - 0.35, scale=8.0)
-            tendency -= 0.08 * (1.0 - time_open)
+            tendency -= float(params["talk_to_alumni_time_penalty"]) * (1.0 - time_open)
         if ACTION_CATEGORIES.get(ActionType(action)) == "emotional":
-            tendency += 0.05 * motives["resentment_drive"]
-        tendency += rng.uniform(-0.015, 0.015)
-        tendency = max(-0.4, tendency)
-        intensity = _clamp(0.30 + 0.60 * _sigmoid(tendency - 0.18, scale=3.2))
-        candidates.append(ActionCandidate(action, target, tendency, intensity=intensity, motives=motives))
+            tendency += float(params["emotional_action_bonus"]) * motives["resentment_drive"]
+        noise = float(params["noise_amplitude"])
+        tendency += rng.uniform(-noise, noise)
+        tendency = max(float(params["min_tendency"]), tendency)
+        intensity = _clamp(
+            float(params["intensity_base"])
+            + float(params["intensity_scale"])
+            * _sigmoid(tendency - float(params["intensity_center"]), scale=float(params["intensity_steepness"]))
+        )
+        candidates.append(ActionCandidate(action, target, tendency, intensity=intensity, motives=motives, parameter_source=source))
 
     candidates.sort(key=lambda c: c.tendency, reverse=True)
     kept = candidates[: max(1, min(top_n, len(candidates)))]
     arousal = agent.emotion.anger + agent.emotion.resentment + agent.emotion.anxiety * 0.5
-    temperature = 0.20 + 0.22 * (1.0 - _clamp(arousal / 1.5))
+    temperature = float(params["temperature_base"]) + float(params["temperature_arousal_scale"]) * (1.0 - _clamp(arousal / float(params["temperature_arousal_norm"])))
     probs = _softmax([c.tendency for c in kept], temperature=temperature)
     for candidate, prob in zip(kept, probs):
         candidate.probability = prob
@@ -301,3 +391,8 @@ def sample_action_candidate(candidates: list[ActionCandidate], *, seed: int, rou
         if needle <= total:
             return candidate
     return candidates[-1]
+
+
+
+
+

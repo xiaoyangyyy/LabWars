@@ -1,0 +1,67 @@
+﻿action_field:
+  version: 1
+  description: >
+    Calibratable continuous action-field parameters. These weights are not
+    claims about universal psychology; they are model parameters for ablation,
+    calibration, and sensitivity analysis.
+  baseline_tendency: 0.10
+  repetition_penalty: 0.045
+  avoided_action_penalty: 0.08
+  emotional_action_bonus: 0.05
+  talk_to_alumni_time_penalty: 0.08
+  noise_amplitude: 0.015
+  min_tendency: -0.40
+  intensity_base: 0.30
+  intensity_scale: 0.60
+  intensity_center: 0.18
+  intensity_steepness: 3.20
+  temperature_base: 0.20
+  temperature_arousal_scale: 0.22
+  temperature_arousal_norm: 1.50
+
+motive_weights:
+  run_experiment: {research_drive: 0.45, rival_anxiety: 0.25, career_pressure: 0.15, fatigue: -0.20}
+  improve_baseline: {research_drive: 0.35, rival_anxiety: 0.25, integrity_pressure: 0.20}
+  write_section: {research_drive: 0.30, credit_capture: 0.20, career_pressure: 0.10}
+  debug_code: {research_drive: 0.30, integrity_pressure: 0.35, cooperation_norm: 0.10}
+  analyze_failure: {integrity_pressure: 0.35, research_drive: 0.25, caution: 0.10}
+  prepare_rebuttal: {research_drive: 0.30, career_pressure: 0.20, rival_anxiety: 0.20}
+  open_source_code: {integrity_pressure: 0.25, cooperation_norm: 0.35, research_drive: 0.10}
+  withhold_code: {credit_capture: 0.30, resentment_drive: 0.25, caution: -0.15}
+  ask_for_authorship: {authorship_anxiety: 0.35, credit_capture: 0.35, resentment_drive: 0.20, caution: -0.22}
+  privately_lobby_pi: {authorship_anxiety: 0.30, career_pressure: 0.20, caution: 0.18, credit_capture: 0.20}
+  support_teammate: {cooperation_norm: 0.45, career_pressure: 0.08, resentment_drive: -0.20}
+  undermine_teammate: {resentment_drive: 0.35, credit_capture: 0.25, caution: -0.25}
+  form_alliance: {credit_capture: 0.25, resentment_drive: 0.18, cooperation_norm: 0.20, caution: 0.05}
+  leak_concern: {integrity_pressure: 0.30, resentment_drive: 0.20, caution: -0.20}
+  request_mediation: {authorship_anxiety: 0.20, caution: 0.25, cooperation_norm: 0.20}
+  delay_response: {fatigue: 0.30, caution: 0.25, career_pressure: 0.10}
+  share_result: {cooperation_norm: 0.35, research_drive: 0.25, caution: 0.08}
+  hide_negative_result: {career_pressure: 0.25, rival_anxiety: 0.25, integrity_pressure: -0.35, caution: -0.10}
+  selectively_report: {career_pressure: 0.25, credit_capture: 0.20, integrity_pressure: -0.20}
+  challenge_claim: {resentment_drive: 0.30, credit_capture: 0.30, authorship_anxiety: 0.20, caution: -0.22}
+  document_contribution: {credit_capture: 0.30, authorship_anxiety: 0.25, caution: 0.15, integrity_pressure: 0.10}
+  cite_prior_memory: {credit_capture: 0.25, resentment_drive: 0.20, caution: 0.05}
+  confront: {resentment_drive: 0.35, authorship_anxiety: 0.25, authority_pressure: 0.10, caution: -0.35}
+  withdraw: {resentment_drive: 0.25, fatigue: 0.25, authorship_anxiety: 0.18, career_pressure: -0.18}
+  apologize: {caution: 0.25, cooperation_norm: 0.25, career_pressure: 0.15, resentment_drive: -0.20}
+  blame: {resentment_drive: 0.35, rival_anxiety: 0.10, caution: -0.25}
+  seek_validation: {authorship_anxiety: 0.20, career_pressure: 0.20, caution: 0.10}
+  comply: {career_pressure: 0.35, authority_pressure: 0.25, caution: 0.20, resentment_drive: -0.20}
+  rebel: {resentment_drive: 0.35, authority_pressure: 0.20, authorship_anxiety: 0.20, caution: -0.35}
+  contact_collaborator: {research_drive: 0.15, rival_anxiety: 0.20, career_pressure: 0.10}
+  check_rival_arxiv: {rival_anxiety: 0.45, research_drive: 0.15, caution: 0.05}
+  submit_workshop_version: {rival_anxiety: 0.35, career_pressure: 0.25, research_drive: 0.15, caution: -0.10}
+  talk_to_alumni: {authorship_anxiety: 0.25, caution: 0.18, resentment_drive: 0.12}
+  notify_program_officer: {career_pressure: 0.25, integrity_pressure: 0.20, caution: -0.10}
+
+event_affinity:
+  authorship_promise: {ask_for_authorship: 0.15, privately_lobby_pi: 0.12, document_contribution: 0.08}
+  authorship_ambiguity: {privately_lobby_pi: 0.16, ask_for_authorship: 0.13, document_contribution: 0.10, confront: 0.06}
+  authorship_draft: {ask_for_authorship: 0.18, privately_lobby_pi: 0.13, document_contribution: 0.10, confront: 0.08}
+  credit_dispute: {document_contribution: 0.14, challenge_claim: 0.12, request_mediation: 0.08}
+  experiment_failure: {analyze_failure: 0.16, debug_code: 0.14, share_result: 0.07}
+  baseline_failure: {improve_baseline: 0.18, analyze_failure: 0.12}
+  rival_preprint: {check_rival_arxiv: 0.18, run_experiment: 0.12, submit_workshop_version: 0.10}
+  negative_result_hidden: {analyze_failure: 0.10, leak_concern: 0.08, hide_negative_result: 0.06}
+  integrity_dispute: {analyze_failure: 0.12, debug_code: 0.10, leak_concern: 0.07}

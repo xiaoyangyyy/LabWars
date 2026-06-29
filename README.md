@@ -1,4 +1,4 @@
-# LabWars
+﻿# LabWars
 
 > **LabWars 不模拟科研成功，而是反编译科研合作为什么变成内斗。**
 
@@ -42,11 +42,11 @@ LabWars/
 - [x] 项目文档体系建立（v0.1.0）
 - [x] Part 1–4 全部实现（**54 tests passed**）
 - [x] **Agent 决策与 memory interpretation 经 LLM**（OpenAI / Anthropic / Ollama）
-- [x] 启发式 softmax 策略已移除
+- [x] LLM 不直接选择 primary action；连续 latent action field 采样动作，LLM 负责 public/private 解释
 
 ## LLM 配置（必配）
 
-仿真**必须**通过大模型做 action 选择与记忆解释。配置见 [`config/llm.yaml`](config/llm.yaml)：
+仿真通过连续 latent action field 采样 primary action；大模型负责记忆解释与 public/private 话术生成。配置见 [`config/llm.yaml`](config/llm.yaml)：
 
 ```yaml
 # 智算 OpenAI 兼容（已验证 ai.azya.top）
@@ -105,3 +105,10 @@ python -m src.experiments report -e A -c A2 --seed 42
 # Part 4 — 汇总分析
 python -m src.experiments aggregate -e A
 ```
+
+
+## Action Field 与 LLM 分工
+
+LabWars 当前不是让 LLM 直接选择真实行动。真实 primary action 由连续 latent action field 生成候选并采样；LLM 负责在 sampled action 约束下生成公开立场、私下意图和解释文本。
+
+可校准参数见 [`config/action_field.yaml`](config/action_field.yaml)。如需测试某组 motive weights 是否主导结果，可使用 `src.experiments.action_field_ablation.run_action_field_ablation` 做多 seed 消融。
