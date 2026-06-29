@@ -1,4 +1,4 @@
-"""LabWars simulation engine — main loop."""
+﻿"""LabWars simulation engine 鈥?main loop."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Any
 import yaml
 
 from src.cognition.pipeline import commit_cognition_phase, pre_decision_recall
+from src.cognition.power import career_hostage_index, pi_control_pressure, pi_control_surface
 from src.engine.critic import CriticAgent
 from src.engine.event_agent import EventAgent, is_agent_active
 from src.engine.intervention import (
@@ -48,6 +49,7 @@ class SimConfig:
     mvp: bool = False
     disable_memory: bool = False
     shuffle_memory: bool = False
+    disable_state_events: bool = False
     experiment_id: str | None = None
     condition_id: str | None = None
 
@@ -62,6 +64,7 @@ class SimConfig:
             "mvp": self.mvp,
             "disable_memory": self.disable_memory,
             "shuffle_memory": self.shuffle_memory,
+            "disable_state_events": self.disable_state_events,
             "experiment_id": self.experiment_id,
             "condition_id": self.condition_id,
             "llm_provider": self.llm_provider or llm_cfg.get("provider"),
@@ -139,7 +142,7 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
 
     world = _filter_world(load_world(), cfg)
     llm = _resolve_llm(cfg)
-    event_agent = EventAgent()
+    event_agent = EventAgent(seed=cfg.seed, state_events=not cfg.disable_state_events)
     policy = RolePolicyAgent(llm=llm)
     critic = CriticAgent()
     probe = ProbeAgent()
@@ -223,16 +226,26 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         if event.type == "authorship_draft":
             world.project.author_order_draft = event.payload.get("author_order", [])
 
-        metrics = {**cog.metrics, **_relationship_snapshot(world)}
+        metrics = {
+            **cog.metrics,
+            "career_hostage_index": career_hostage_index(world),
+            "pi_control_pressure_phd_a": pi_control_pressure(world, world.agents.get("phd_a")),
+            **_relationship_snapshot(world),
+        }
         log.record_round(round_num, event.event_id, metrics, cog.agent_deltas, intervention_id)
 
         if world.project.submission_status == "accepted":
             break
 
     finalize_outcomes(log, world.agents, world.relationships)
+    log.outcomes["career_hostage_index"] = career_hostage_index(world)
+    log.outcomes["pi_control_surface"] = pi_control_surface(world)
     log.outcomes["probe_suggestions"] = probe.suggest(log.round_records)
 
     if cfg.output_dir:
         log.write_jsonl(Path(cfg.output_dir) / f"run_{run_id}.jsonl")
 
     return log
+
+
+

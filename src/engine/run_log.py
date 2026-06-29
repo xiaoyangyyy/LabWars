@@ -1,8 +1,9 @@
-"""Simulation run log — JSONL persistence."""
+﻿"""Simulation run log 鈥?JSONL persistence."""
 
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -261,26 +262,24 @@ def _promise_honored_strength_r52(log: RunLog, agent_id: str = "phd_a") -> float
     return strength
 
 
-def _high_intensity_escalated_count(
+def _escalated_action_pressure(
     log: RunLog,
     agent: str = "phd_a",
     r_min: int = 52,
     r_max: int = 53,
-    min_intensity: float = 0.62,
-) -> int:
-    count = 0
+) -> float:
+    pressure = 0.0
     for act in log.actions:
         if act.get("agent") != agent:
             continue
         rnd = act.get("round", 0)
         if rnd < r_min or rnd > r_max:
             continue
-        if act.get("type") not in PROTEST_ESCALATED_ACTIONS:
-            continue
-        if float(act.get("intensity", 0.5)) >= min_intensity:
-            count += 1
-    return count
-
+        pressure += action_escalation_impulse(
+            str(act.get("type", "")),
+            float(act.get("intensity", 0.5)),
+        )
+    return 1.0 - math.exp(-pressure)
 
 def _interpretation_valence_at_event(log: RunLog, event_id: str, agent_id: str = "phd_a") -> float:
     for rec in log.round_records:
@@ -315,17 +314,10 @@ def _authority_compliance(log: RunLog, agent: str = "phd_a") -> float:
 
 def extract_outcome(log: RunLog, outcome: str) -> float:
     if outcome == "protest_authorship":
-        if _action_in_window(log, "phd_a", R52_COMPLIANCE_ACTIONS, 52, 53) >= 1.0:
-            return 0.0
+        compliance = _action_in_window(log, "phd_a", R52_COMPLIANCE_ACTIONS, 52, 53)
         score = _authorship_escalation_score(log)
-        high_intensity = _high_intensity_escalated_count(log, r_min=52, r_max=53)
-        if score >= 0.22:
-            return 1.0
-        if high_intensity >= 1 and score >= 0.12:
-            return 1.0
-        if high_intensity >= 2:
-            return 1.0
-        return 0.0
+        action_pressure = _escalated_action_pressure(log, r_min=52, r_max=53)
+        return max(0.0, min(1.0, score * (0.65 + 0.35 * action_pressure) * (1.0 - 0.65 * compliance)))
     if outcome == "protest_intensity":
         return _authorship_escalation_score(log)
     if outcome == "authorship_escalation_potential":
@@ -449,3 +441,13 @@ def finalize_outcomes(log: RunLog, world_agents: dict | None = None, relationshi
             )
         log.outcomes["pi_fairness_r60"] = agent.beliefs.pi_fairness
         log.outcomes["pi_trust_belief_final"] = agent.beliefs.pi_fairness
+        if relationships is not None:
+            class _WorldProxy:
+                pass
+            proxy = _WorldProxy()
+            proxy.agents = world_agents
+            proxy.relationships = relationships
+            # project is unavailable here; use final logged metrics proxy if full world was not passed.
+        log.outcomes.setdefault("career_hostage_index", 0.0)
+
+

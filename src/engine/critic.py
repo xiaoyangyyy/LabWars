@@ -1,4 +1,4 @@
-"""Critic Agent — action consistency audit."""
+﻿"""Critic Agent 鈥?action consistency audit."""
 
 from __future__ import annotations
 
@@ -16,6 +16,20 @@ class Violation:
     message: str
 
 
+
+ACTION_PUBLIC_COMPATIBILITY: dict[str, set[str]] = {
+    "confront": {"challenge", "concern", "authorship_claim", "neutral"},
+    "challenge_claim": {"challenge", "concern", "authorship_claim", "neutral"},
+    "ask_for_authorship": {"authorship_claim", "concern", "neutral"},
+    "privately_lobby_pi": {"neutral", "concern", "team_support"},
+    "undermine_teammate": {"neutral", "concern", "team_support"},
+    "support_teammate": {"team_support", "neutral"},
+    "document_contribution": {"authorship_claim", "neutral", "concern"},
+    "withdraw": {"concern", "neutral"},
+    "comply": {"team_support", "neutral"},
+}
+
+ESCALATING_ACTIONS = {"confront", "challenge_claim", "ask_for_authorship", "withdraw", "rebel", "blame"}
 class CriticAgent:
     def check(self, action: dict[str, Any], agent: Agent, world: WorldState) -> list[Violation]:
         violations: list[Violation] = []
@@ -36,16 +50,39 @@ class CriticAgent:
             violations.append(Violation("memory_consistency", "hard", "cite_prior_memory with empty memory"))
 
         public = action.get("public_position", {})
-        if (
-            public.get("statement_type") == "team_support"
-            and action.get("type") == "undermine_teammate"
-            and agent.personality.deceptiveness < 0.6
-        ):
-            violations.append(Violation("public_private_conflict", "soft", "team_support public with undermine action"))
+        if public.get("statement_type") == "team_support" and action.get("type") == "undermine_teammate":
+            conflict_score = 1.0 - agent.personality.deceptiveness
+            violations.append(Violation(
+                "public_private_conflict",
+                "soft",
+                f"team_support public with undermine action; conflict_score={conflict_score:.3f}",
+            ))
 
-        recent = [h.get("action", {}).get("type") for h in agent.action_history[-2:]]
-        if len(recent) == 2 and all(r == atype for r in recent):
-            violations.append(Violation("action_repetition", "soft", f"{atype} repeated 3 rounds"))
+        statement_type = str(public.get("statement_type", "neutral"))
+        compatible = ACTION_PUBLIC_COMPATIBILITY.get(str(atype), {"neutral", statement_type})
+        if statement_type not in compatible:
+            violations.append(Violation(
+                "llm_public_action_drift",
+                "soft",
+                f"public statement_type={statement_type} weakly mismatches sampled action={atype}",
+            ))
+
+        private = action.get("private_intent", {})
+        strategy = str(private.get("strategy", ""))
+        if str(atype) in ESCALATING_ACTIONS and strategy in {"comply", "support_teammate", "lay_low"}:
+            violations.append(Violation(
+                "llm_private_strategy_drift",
+                "soft",
+                f"private strategy={strategy} under-explains sampled action={atype}",
+            ))
+
+        selected = action.get("selected_action") or {}
+        if selected and selected.get("type") and selected.get("type") != atype:
+            violations.append(Violation(
+                "sampled_action_overridden",
+                "hard",
+                f"action type {atype} differs from sampled {selected.get('type')}",
+            ))
 
         return violations
 
@@ -68,3 +105,5 @@ class CriticAgent:
         fixed["intensity"] = min(float(action.get("intensity", 0.5)), 0.6)
         fixed["_critic_fallback"] = True
         return fixed, violations
+
+

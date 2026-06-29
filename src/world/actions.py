@@ -314,9 +314,8 @@ def all_action_types() -> list[str]:
 
 
 def get_allowed_actions(agent_id: str, burnout: float = 0.0) -> list[ActionType]:
+    """Return legally available actions; burnout affects probability, not availability."""
     blocked = set(AGENT_ACTION_RESTRICTIONS.get(agent_id, set()))
-    if burnout > 0.8:
-        blocked.add(ActionType.RUN_EXPERIMENT)
     return [a for a in ActionType if a not in blocked]
 
 

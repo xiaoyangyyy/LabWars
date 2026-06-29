@@ -1,4 +1,4 @@
-"""Action diversity helpers — reduce repetitive LLM policy loops."""
+"""Action diversity helpers — expose recent history without hard action bans."""
 
 from __future__ import annotations
 
@@ -30,39 +30,19 @@ def action_usage_counts(agent: Agent, window: int = 8) -> dict[str, int]:
     return dict(counts)
 
 
-def avoid_actions(agent: Agent, *, streak_limit: int = 2, saturation: int = 4, window: int = 8) -> list[str]:
-    """Actions the LLM should not pick this round."""
-    avoid: set[str] = set()
-    recent = [h.get("action", {}).get("type") for h in agent.action_history[-streak_limit:]]
-    recent = [t for t in recent if t]
-    if len(recent) >= streak_limit and len(set(recent)) == 1:
-        avoid.add(str(recent[-1]))
-
-    counts = action_usage_counts(agent, window=window)
-    for atype, count in counts.items():
-        if count >= saturation:
-            avoid.add(atype)
-
-    return sorted(avoid)
+def avoid_actions(agent: Agent) -> list[str]:
+    """No hard action bans; repetition is handled as a continuous tendency penalty."""
+    return []
 
 
 def filter_allowed_actions(allowed: list[str], avoid: list[str], min_keep: int = 3) -> tuple[list[str], list[str]]:
-    if not avoid:
-        return allowed, []
-    filtered = [a for a in allowed if a not in avoid]
-    if len(filtered) >= min_keep:
-        return filtered, avoid
-    # Keep at least min_keep options — drop avoid for least-used saturated only
-    if len(allowed) <= min_keep:
-        return allowed, []
-    trimmed = avoid[:-1] if len(avoid) > 1 else []
-    filtered = [a for a in allowed if a not in trimmed]
-    return (filtered if len(filtered) >= min_keep else allowed), trimmed
+    """Compatibility shim: keep the legal action set intact."""
+    return allowed, []
 
 
-def is_repetitive_choice(agent: Agent, action_type: str, *, streak_limit: int = 2) -> bool:
-    recent = [h.get("action", {}).get("type") for h in agent.action_history[-(streak_limit - 1):]]
-    return len(recent) == streak_limit - 1 and all(t == action_type for t in recent)
+def is_repetitive_choice(agent: Agent, action_type: str) -> bool:
+    """Compatibility shim for old callers; repetition is no longer a hard violation."""
+    return False
 
 
 def memory_action_hints(agent: Agent, recall: Any | None, max_hooks: int = 4) -> list[str]:

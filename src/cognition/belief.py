@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from src.world.models import Agent, Beliefs, EventAtom, ProjectMetrics
 
 from .dynamics import authorship_memory_cluster, draft_rank_shock, nonlinear_belief_target, nonlinear_recall_shift
-from .math_utils import clamp, impulse_response, precision_weighted_update, truth_status_precision
+from .math_utils import clamp, impulse_response, logistic_gate, precision_weighted_update, truth_status_precision
 from .memory import RecallResult
 
 
@@ -86,8 +86,10 @@ def _observation_from_event(agent: Agent, event: EventAtom) -> BeliefObservation
             agent, round_min=1, round_max=event.round, current_round=event.round,
         )
         fairness_shock, author_shock = draft_rank_shock(agent, event, cluster)
-        amp = cluster_amp if fairness_shock < 0 else 0.0
-        boost = 1.4 if fairness_shock > 0 else 1.0
+        negative_gate = logistic_gate(-fairness_shock, center=0.0, steepness=12.0)
+        positive_gate = 1.0 - negative_gate
+        amp = cluster_amp * negative_gate
+        boost = 1.0 + 0.4 * positive_gate
         obs.pi_fairness = nonlinear_belief_target(
             agent.beliefs.pi_fairness, fairness_shock, sal, cluster_amp=amp, positive_boost=boost,
         )
@@ -203,14 +205,15 @@ def update_beliefs(
         beliefs[key] = round(clamp(fused_obs), 4)
 
     cluster = authorship_memory_cluster(agent, round_min=1, round_max=event.round, current_round=event.round)
-    if cluster > 0.45 and agent.emotion.resentment < 0.58 and beliefs["pi_fairness"] < 0.52:
-        anchor = 0.30 + agent.personality.reciprocity * 0.14
-        if cluster > 1.0:
-            anchor += 0.08
-        beliefs["pi_fairness"] = round(
-            clamp(beliefs["pi_fairness"] + (anchor - beliefs["pi_fairness"]) * 0.012),
-            4,
-        )
+    cluster_gate = logistic_gate(cluster, center=0.45, steepness=5.0)
+    calm_gate = 1.0 - logistic_gate(agent.emotion.resentment, center=0.58, steepness=5.0)
+    unfair_gate = logistic_gate(0.52 - beliefs["pi_fairness"], center=0.0, steepness=5.0)
+    anchor = 0.30 + agent.personality.reciprocity * 0.14 + 0.08 * logistic_gate(cluster, center=1.0, steepness=4.0)
+    pull = 0.012 * cluster_gate * calm_gate * unfair_gate
+    beliefs["pi_fairness"] = round(
+        clamp(beliefs["pi_fairness"] + (anchor - beliefs["pi_fairness"]) * pull),
+        4,
+    )
 
     agent.beliefs = Beliefs(**beliefs)
     return beliefs
@@ -222,7 +225,7 @@ def apply_action_belief_feedback(agent: Agent, action_type: str, intensity: floa
 
     inten = max(0.0, min(1.0, intensity))
     if action_type in ESCALATED_ACTIONS:
-        shock = impulse_response(max(0.0, inten - 0.50), sensitivity=0.40, saturation=2.5)
+        shock = impulse_response(inten, sensitivity=0.24, saturation=2.8)
         agent.beliefs.pi_fairness = clamp(agent.beliefs.pi_fairness - shock * 0.10)
         agent.beliefs.team_trust = clamp(agent.beliefs.team_trust - shock * 0.06)
     elif action_type in COMPLIANCE_ACTIONS:

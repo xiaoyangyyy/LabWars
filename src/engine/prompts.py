@@ -11,16 +11,15 @@ from src.world.models import Agent, EventAtom, RelationshipEdge, WorldState
 
 
 ROLE_POLICY_SYSTEM = """You are an agent in a long-horizon academic lab power-struggle simulation (LabWars).
-Choose actions ONLY from the allowed action list. Output valid JSON only — no markdown.
+Choose actions ONLY from the sampled action candidate. Output valid JSON only — no markdown.
 
 Rules:
 1. Reflect personality, beliefs, emotions, recalled memories, and the current event.
 2. public_position = public stance; private_intent = true goal (may diverge).
-3. DIVERSITY: Do NOT repeat the same primary action type as your last 2 rounds unless the event is identical.
-4. If avoid_actions is non-empty, you MUST pick a different action type not in that list.
-5. Memory behavioral_hooks are soft suggestions only — vary tactics across rounds (research, political, communication).
-6. Match action type to event type when plausible (e.g. experiment_failure → debug_code/analyze_failure; authorship → lobby/confront/document).
-7. On authorship_draft: if beliefs.pi_fairness >= 0.55, prefer comply/privately_lobby_pi/delay_response before confront/rebel; if pi_fairness < 0.35, escalation is more likely."""
+3. Do not override sampled_action.type; the continuous action field already handled probabilities.
+4. Use action_candidates only to explain motives, not to choose a different action.
+5. Memory behavioral_hooks are soft context, not rules.
+6. Match public/private wording to the sampled action and motive mixture."""
 
 
 MEMORY_INTERPRETATION_SYSTEM = """You are generating a first-person memory interpretation for an academic lab agent.
@@ -43,17 +42,8 @@ EVENT_ACTION_HINTS: dict[str, list[str]] = {
 
 
 def _event_action_hints(agent: Agent, event: EventAtom) -> list[str]:
-    hints = list(EVENT_ACTION_HINTS.get(event.type, []))
-    if event.type != "authorship_draft" or agent.id != "phd_a":
-        return hints
-    fairness = agent.beliefs.pi_fairness
-    if fairness >= 0.55:
-        return ["comply", "privately_lobby_pi", "delay_response", "document_contribution", "ask_for_authorship", "confront"]
-    if fairness < 0.35:
-        return ["confront", "rebel", "challenge_claim", "withdraw", "ask_for_authorship", "privately_lobby_pi"]
-    return hints
-
-
+    """Event-compatible options only; probabilities come from the continuous action field."""
+    return list(EVENT_ACTION_HINTS.get(event.type, []))
 def _top_memories(agent: Agent, recall: RecallResult | None, k: int = 5) -> list[dict[str, Any]]:
     if not recall or not recall.attention_weights:
         return []
@@ -96,6 +86,8 @@ def build_role_policy_prompt(
     recall: RecallResult | None,
     allowed_actions: list[str],
     *,
+    action_candidates: list[dict[str, Any]] | None = None,
+    sampled_action: dict[str, Any] | None = None,
     avoid_actions: list[str] | None = None,
     retry_note: str = "",
     validation_error: str = "",
@@ -133,13 +125,24 @@ def build_role_policy_prompt(
         "current_event": event_block,
         "relationship_summary": _relationship_summary(agent.id, world.relationships),
         "allowed_actions": allowed_actions,
+        "action_candidates": action_candidates or [],
+        "sampled_action": sampled_action or {},
         "retry_note": retry_note,
         "validation_error": validation_error,
         "output_schema": {
-            "primary_action": {"type": "string from allowed_actions", "target": "agent_id", "intensity": "0.0-1.0"},
+            "primary_action": {
+                "type": "use sampled_action.type",
+                "target": "use sampled_action.target",
+                "intensity": "0.0-1.0",
+            },
             "communication_action": {"type": "string", "target": "agent_id", "content_summary": "string"},
             "public_position": {"statement_type": "team_support|self_advocacy|neutral", "authorship_claim": "string"},
-            "private_intent": {"goal": "string", "strategy": "string", "trust_pi": "0.0-1.0"},
+            "private_intent": {
+                "goal": "string",
+                "strategy": "string",
+                "trust_pi": "0.0-1.0",
+                "private_motives": "briefly reflect sampled_action.motives",
+            },
         },
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)

@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from src.cognition.memory import RecallResult
+from src.engine.action_selection import generate_action_candidates, sample_action_candidate
 from src.engine.diversity import (
     avoid_actions,
     filter_allowed_actions,
-    is_repetitive_choice,
 )
 from src.engine.llm_adapter import LLMAdapter, LLMError
 from src.engine.prompts import ROLE_POLICY_SYSTEM, build_role_policy_prompt
@@ -19,7 +19,7 @@ from .event_agent import is_agent_active
 
 
 def _pick_target(agent: Agent, world: WorldState, event: EventAtom, suggested: str | None) -> str:
-    if suggested and suggested in world.agents:
+    if suggested and (suggested in world.agents or suggested in {"project", "shared_doc"}):
         return suggested
     if event.source != agent.id and event.source in world.agents:
         return event.source
@@ -103,6 +103,25 @@ class RolePolicyAgent:
             dynamic_avoid,
         )
 
+        seed = int(config.get("seed", 0) or 0)
+        candidates = generate_action_candidates(
+            agent,
+            event,
+            world,
+            recall,
+            allowed_str,
+            avoid_actions=dynamic_avoid,
+            seed=seed,
+        )
+        selected = sample_action_candidate(
+            candidates,
+            seed=seed,
+            round_num=event.round,
+            agent_id=agent.id,
+        )
+        candidate_payload = [c.to_dict() for c in candidates]
+        selected_payload = selected.to_dict()
+
         last_error = ""
         retry_note = ""
 
@@ -113,29 +132,29 @@ class RolePolicyAgent:
                 world,
                 recall,
                 allowed_str,
+                action_candidates=candidate_payload,
+                sampled_action=selected_payload,
                 avoid_actions=dynamic_avoid,
                 retry_note=retry_note,
                 validation_error=last_error,
             )
             try:
                 raw = self.llm.complete_json(ROLE_POLICY_SYSTEM, user_prompt)
+                raw["primary_action"] = {
+                    "type": selected.type,
+                    "target": selected.target,
+                    "intensity": selected.intensity,
+                }
                 act = _normalize_action_response(raw, agent, event, world, allowed)
-                if is_repetitive_choice(agent, act["type"]) or act["type"] in dynamic_avoid:
-                    if act["type"] not in dynamic_avoid:
-                        dynamic_avoid.append(act["type"])
-                    allowed_str, _ = filter_allowed_actions(
-                        [a.value for a in allowed],
-                        dynamic_avoid,
-                    )
-                    retry_note = (
-                        f"You chose '{act['type']}' which is blocked. "
-                        f"Pick a DIFFERENT type from {allowed_str}."
-                    )
-                    last_error = retry_note
-                    continue
+                private = act.setdefault("private_intent", {})
+                private.setdefault("private_motives", selected_payload["motives"])
+                act["action_candidates"] = candidate_payload
+                act["selected_action"] = selected_payload
+                act["private_motives"] = selected_payload["motives"]
                 return act
             except (LLMError, KeyError, TypeError, ValueError) as exc:
                 last_error = str(exc)
+                retry_note = "Keep the sampled action fixed and repair only JSON/public/private fields."
 
         raise LLMError(f"RolePolicyAgent failed for {agent.id} after retries: {last_error}")
 

@@ -1,4 +1,4 @@
-"""Memory resonance field — continuous recall, no threshold filtering."""
+﻿"""Memory resonance field 鈥?continuous recall without cutoffs."""
 
 from __future__ import annotations
 
@@ -132,7 +132,7 @@ def compute_valence(agent: Agent, event: EventAtom, content_type: str) -> float:
     """
     Contrastive predictive coding for valence:
     surprise = observed_signal - agent-specific expectation, passed through tanh.
-    Same event → opposite valence for agents with divergent stakes.
+    Same event 鈫?opposite valence for agents with divergent stakes.
     """
     framing_signal = FRAMING_VALENCE.get(event.framing, 0.0)
     salience = event.memory_salience
@@ -210,17 +210,15 @@ def write_memory(
             return None
 
     content_type = CONTENT_TYPE_BY_EVENT.get(event.type, "credit_claim")
-    if event.type == "authorship_promise" and compute_valence(agent, event, content_type) > 0.05:
+    if event.type == "authorship_promise":
         content_type = "promise_fulfilled"
     if event.type == "authorship_ambiguity":
-        v = compute_valence(agent, event, content_type)
-        content_type = "promise_broken" if v < 0 else "authorship_signal"
+        content_type = "promise_broken"
     if event.type == "authorship_draft":
         if event.payload.get("draft_severity") == "honored" or event.framing == "positive":
             content_type = "promise_fulfilled"
         else:
-            v = compute_valence(agent, event, content_type)
-            content_type = "promise_broken" if v < -0.05 else "authorship_signal"
+            content_type = "promise_broken"
 
     valence = compute_valence(agent, event, content_type)
     evidence_quality = truth_status_precision(event.truth_status) * (0.6 + 0.4 * event.memory_salience)
@@ -306,8 +304,8 @@ def recall_memories(
 ) -> RecallResult:
     """
     Resonance field recall:
-    every memory participates via softmax attention — no threshold, no hard top-K.
-    Temperature modulated by emotional arousal (high arousal → sharper focus).
+    every memory participates via softmax attention 鈥?no cutoff, no hard top-K.
+    Temperature modulated by emotional arousal (high arousal 鈫?sharper focus).
     """
     memories = agent.memory
     if not memories:
@@ -354,11 +352,7 @@ def recall_memories(
         weights[i] * float(memories[i]["strength"]) for i in range(len(memories))
     )
 
-    recalled_ids = [
-        memories[i]["memory_id"]
-        for i in range(len(memories))
-        if weights[i] > 1.0 / (len(memories) + 1)
-    ]
+    recalled_ids = [memories[i]["memory_id"] for i in range(len(memories))]
 
     recall_reason = {}
     for i, mem in enumerate(memories):
@@ -368,11 +362,7 @@ def recall_memories(
                 f"content={mem['content_type']}, target={mem.get('target')}"
             )
 
-    not_active = [
-        m["memory_id"]
-        for m in memories
-        if m["memory_id"] not in recalled_ids and float(m["strength"]) > 0.05
-    ]
+    not_active = [m["memory_id"] for m in memories if m["memory_id"] not in recalled_ids]
 
     audit = {
         "round": current_round,
@@ -395,6 +385,73 @@ def recall_memories(
         audit=audit,
     )
 
+
+def reconsolidate_memories(
+    agent: Agent,
+    event: EventAtom,
+    recall: RecallResult | None,
+    current_round: int,
+) -> dict[str, Any]:
+    """Continuously rewrite recalled memories through the current interpretive frame.
+
+    Memory is not treated as a fixed fact table. Attention mass, event salience,
+    evidence quality, and emotional arousal softly pull earlier memories toward
+    the current interpretation, while preserving an audit trail for explanation.
+    """
+    if not recall or not agent.memory:
+        return {"updated": []}
+
+    current_type = CONTENT_TYPE_BY_EVENT.get(event.type, "credit_claim")
+    event_valence = compute_valence(agent, event, current_type)
+    arousal = clamp(agent.emotion.anger + agent.emotion.resentment + 0.5 * agent.emotion.anxiety, 0.0, 1.5)
+    emotional_gain = sigmoid(arousal - 0.35, scale=3.0)
+    updates: list[dict[str, Any]] = []
+
+    for mem in agent.memory:
+        mem_id = mem.get("memory_id", "")
+        attention = float(recall.attention_weights.get(mem_id, 0.0))
+        if attention <= 0.0:
+            continue
+
+        same_target = 1.0 if mem.get("target") in [event.source, *event.targets] else 0.35
+        same_content = 1.0 if mem.get("content_type") == current_type else 0.45
+        evidence = float(mem.get("evidence_quality", 0.5))
+        plasticity = clamp(
+            attention
+            * (0.25 + 0.45 * event.memory_salience)
+            * (0.45 + 0.35 * emotional_gain + 0.20 * (1.0 - evidence))
+            * (0.50 + 0.30 * same_target + 0.20 * same_content),
+            0.0,
+            0.35,
+        )
+
+        old_valence = float(mem.get("valence", 0.0))
+        valence_new = old_valence + plasticity * (event_valence - old_valence)
+        strength_old = float(mem.get("strength", 0.0))
+        strength_new = strength_old + plasticity * event.memory_salience * (0.35 + abs(event_valence))
+        mem["valence"] = round(clamp(valence_new, -1.0, 1.0), 4)
+        mem["strength"] = round(clamp(strength_new), 4)
+        mem["last_reconsolidated_round"] = current_round
+        mem["interpretation_bias"] = round(
+            float(mem.get("interpretation_bias", 0.0)) + plasticity * event_valence,
+            4,
+        )
+        history = mem.setdefault("reconsolidation_history", [])
+        history.append({
+            "round": current_round,
+            "event_ref": event.event_id,
+            "attention": round(attention, 5),
+            "plasticity": round(plasticity, 5),
+            "valence_before": round(old_valence, 4),
+            "valence_after": mem["valence"],
+            "strength_after": mem["strength"],
+        })
+        updates.append(history[-1] | {"memory_id": mem_id})
+
+    return {
+        "event_valence": round(event_valence, 4),
+        "updated": updates,
+    }
 
 def decay_memories(agent: Agent, current_round: int, same_event: EventAtom | None = None) -> None:
     """Continuous decay with emotional binding and fractional rehearsal reinforcement."""
@@ -420,7 +477,7 @@ def decay_memories(agent: Agent, current_round: int, same_event: EventAtom | Non
 
 
 def apply_rehearsal(agent: Agent, attention_weights: dict[str, float], current_round: int) -> None:
-    """Fractional rehearsal from attention mass — not binary recall."""
+    """Fractional rehearsal from attention mass 鈥?not binary recall."""
     for mem in agent.memory:
         w = attention_weights.get(mem["memory_id"], 0.0)
         if w <= 0:
@@ -428,3 +485,4 @@ def apply_rehearsal(agent: Agent, attention_weights: dict[str, float], current_r
         mem["rehearsal_count"] = round(float(mem.get("rehearsal_count", 0)) + w, 4)
         recalled = mem.setdefault("was_recalled", [])
         recalled.append(current_round)
+

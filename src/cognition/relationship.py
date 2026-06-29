@@ -1,4 +1,4 @@
-"""Signed graph diffusion for relationships — continuous message passing."""
+﻿"""Signed graph diffusion for relationships 鈥?continuous message passing."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def _ledger_credit_jacobian(
 ) -> float:
     """
     Continuous credit threat: how much B's total ledger growth
-    compresses A's relative share (Jacobian-style, not threshold).
+    compresses A's relative share (Jacobian-style, graded).
     """
     dims = list(ledger.keys())
     if not dims:
@@ -134,7 +134,8 @@ def update_relationships(
 
     if actions:
         for act in actions:
-            _apply_action_to_deltas(act, deltas_trust, deltas_resent, deltas_alliance, eta)
+            _apply_action_to_deltas(act, deltas_trust, deltas_resent, deltas_alliance, deltas_credit, eta)
+        _apply_triadic_private_influence(relationships, actions, deltas_trust, deltas_resent, deltas_credit, eta)
 
     updated: list[RelationshipEdge] = []
     for edge in relationships:
@@ -166,11 +167,46 @@ def update_relationships(
     return updated
 
 
+def _apply_triadic_private_influence(
+    relationships: list[RelationshipEdge],
+    actions: list[dict[str, Any]],
+    deltas_trust: dict[tuple[str, str], float],
+    deltas_resent: dict[tuple[str, str], float],
+    deltas_credit: dict[tuple[str, str], float],
+    eta: float,
+) -> None:
+    """Private A->C talk softly contaminates C's view of target B."""
+    edge_lookup = {(e.source, e.target): e for e in relationships}
+    political = {"privately_lobby_pi", "undermine_teammate", "form_alliance", "talk_to_alumni", "challenge_claim"}
+    for action in actions:
+        src = action.get("agent")
+        mediator = action.get("target")
+        atype = action.get("type")
+        intensity = float(action.get("intensity", 0.5))
+        if atype not in political or not src or not mediator or mediator == "project":
+            continue
+        for (m_src, third), mediator_edge in edge_lookup.items():
+            if m_src != mediator or third in {src, mediator}:
+                continue
+            source_view = edge_lookup.get((src, third))
+            if not source_view:
+                continue
+            access = mediator_edge.information_access * mediator_edge.communication_frequency
+            contamination = eta * intensity * access * (0.35 + 0.65 * source_view.perceived_credit_threat)
+            trust_pull = contamination * (source_view.trust - mediator_edge.trust)
+            resent_pull = contamination * (source_view.resentment - mediator_edge.resentment)
+            threat_pull = contamination * (source_view.perceived_credit_threat - mediator_edge.perceived_credit_threat)
+            key = (mediator, third)
+            deltas_trust[key] = deltas_trust.get(key, 0.0) + trust_pull
+            deltas_resent[key] = deltas_resent.get(key, 0.0) + resent_pull
+            deltas_credit[key] = deltas_credit.get(key, 0.0) + threat_pull
+
 def _apply_action_to_deltas(
     action: dict[str, Any],
     deltas_trust: dict[tuple[str, str], float],
     deltas_resent: dict[tuple[str, str], float],
     deltas_alliance: dict[tuple[str, str], float],
+    deltas_credit: dict[tuple[str, str], float],
     eta: float,
 ) -> None:
     src = action.get("agent")
@@ -192,6 +228,23 @@ def _apply_action_to_deltas(
     elif atype == "apologize":
         deltas_resent[key] = deltas_resent.get(key, 0.0) - eta * 0.7 * intensity
         deltas_trust[key] = deltas_trust.get(key, 0.0) + eta * 0.4 * intensity
+    elif atype == "privately_lobby_pi":
+        deltas_trust[key] = deltas_trust.get(key, 0.0) + eta * 0.25 * intensity
+        deltas_alliance[key] = deltas_alliance.get(key, 0.0) + eta * 0.45 * intensity
+        reverse = (tgt, src)
+        deltas_trust[reverse] = deltas_trust.get(reverse, 0.0) + eta * 0.18 * intensity
+        deltas_credit[reverse] = deltas_credit.get(reverse, 0.0) + eta * 0.35 * intensity
+    elif atype in ("challenge_claim", "confront", "blame"):
+        deltas_trust[key] = deltas_trust.get(key, 0.0) - eta * 0.65 * intensity
+        deltas_resent[key] = deltas_resent.get(key, 0.0) + eta * 0.70 * intensity
+        deltas_credit[key] = deltas_credit.get(key, 0.0) + eta * 0.80 * intensity
+        reverse = (tgt, src)
+        deltas_resent[reverse] = deltas_resent.get(reverse, 0.0) + eta * 0.35 * intensity
+    elif atype in ("document_contribution", "cite_prior_memory"):
+        deltas_credit[key] = deltas_credit.get(key, 0.0) - eta * 0.20 * intensity
+    elif atype in ("withhold_code", "selectively_report", "hide_negative_result"):
+        deltas_trust[key] = deltas_trust.get(key, 0.0) - eta * 0.45 * intensity
+        deltas_credit[key] = deltas_credit.get(key, 0.0) + eta * 0.55 * intensity
 
 
 def trust_fragmentation(relationships: list[RelationshipEdge], internal_agents: list[str]) -> float:
@@ -209,7 +262,7 @@ def trust_fragmentation(relationships: list[RelationshipEdge], internal_agents: 
 
 
 def coalition_strength(relationships: list[RelationshipEdge]) -> float:
-    """Integrated alliance mass — no clique threshold."""
+    """Integrated alliance mass over the full graph."""
     if not relationships:
         return 0.0
     mass = sum(e.alliance * e.trust * (1.0 - e.resentment) for e in relationships)
@@ -218,8 +271,11 @@ def coalition_strength(relationships: list[RelationshipEdge]) -> float:
 
 
 def credit_threat_density(relationships: list[RelationshipEdge]) -> float:
-    """Mean soft threat level — logistic smoothing instead of count(threat > 0.6)."""
+    """Mean soft threat level via logistic smoothing."""
     if not relationships:
         return 0.0
     total = sum(logistic_gate(e.perceived_credit_threat, center=0.45, steepness=5) for e in relationships)
     return round(total / len(relationships), 4)
+
+
+

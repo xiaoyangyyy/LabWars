@@ -73,8 +73,8 @@ def _event_impulse(agent: Agent, event: EventAtom) -> EmotionImpulse:
         praised = event.payload.get("praised_agent")
         if praised == agent.id:
             impulse.add(EmotionImpulse(confidence=0.22, hope=0.12, loyalty=0.06), scale=salience)
-        elif praised and praised != agent.id and agent.personality.credit_sensitivity > 0.5:
-            credit_gap = agent.personality.credit_sensitivity - 0.5
+        elif praised and praised != agent.id:
+            credit_gap = softplus((agent.personality.credit_sensitivity - 0.5) * 4.0) / 4.0
             impulse.add(
                 EmotionImpulse(resentment=0.14 * credit_gap, envy=0.11 * credit_gap, anger=0.05 * credit_gap),
                 scale=salience,
@@ -120,7 +120,7 @@ def _project_pressure_impulse(project: ProjectMetrics) -> EmotionImpulse:
 
 
 def _apply_emotion_coupling(emotion: dict[str, float]) -> dict[str, float]:
-    """Positive feedback between anger and resentment — sub-threshold until both rise."""
+    """Positive feedback between anger and resentment via smooth coupling."""
     e = dict(emotion)
     e["anger"] = clamp(e["anger"] + 0.10 * softplus(e["resentment"] - 0.38))
     e["resentment"] = clamp(e["resentment"] + 0.08 * softplus(e["anger"] - 0.32))
@@ -133,7 +133,7 @@ def _apply_antagonistic_homeostasis(
     skip_confidence_anxiety: bool = False,
     skip_loyalty_resentment: bool = False,
 ) -> dict[str, float]:
-    """Cross-inhibition pairs relax extremes without thresholds."""
+    """Cross-inhibition pairs relax extremes without cutoffs."""
     e = dict(emotion)
     if not skip_confidence_anxiety:
         e["confidence"], e["anxiety"] = competitive_inhibition(e["confidence"], e["anxiety"], coupling=0.85)

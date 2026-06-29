@@ -60,7 +60,7 @@ def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None)
     memory_causal = (
         f"- Authorship memory cluster (R3–R40): {outcomes.get('memory_authorship_cluster_strength', 0):.3f}\n"
         f"- Promise broken strength @R52: {outcomes.get('promise_broken_strength_r52', 0):.3f}\n"
-        f"- Confound ladder proxy: memory explains variance when cluster > 0.5 and protest=1"
+        f"- Confound ladder proxy: memory contribution is reported as a continuous mediation fraction"
     )
 
     interventions = log.interventions_applied
@@ -72,7 +72,7 @@ def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None)
     div_peaks = metrics.get("divergence_peaks", [])
     div_text = "\n".join(
         f"- R{p['round']} divergence={p['divergence']:.3f} ({p.get('event_id')})" for p in div_peaks[:8]
-    ) or "_No high-divergence rounds._"
+    ) or "_No divergence ranking available._"
 
     failure = f"- Critic violations: {metrics.get('critic_count', 0)}\n"
     if log.critic_violations:

@@ -67,11 +67,12 @@ class TestOutcomeFixes:
         log.actions = [{"agent": "phd_a", "round": 52, "type": "comply", "intensity": 0.9}]
         assert extract_outcome(log, "protest_authorship") == 0.0
 
-    def test_protest_requires_high_escalation(self):
+    def test_protest_is_continuous_escalation_propensity(self):
         log = _log()
         log.actions = [{"agent": "phd_a", "round": 52, "type": "confront", "intensity": 0.4}]
         log.round_records = [{"round": 52, "agent_deltas": {"phd_a": {
             "beliefs": {"pi_fairness": 0.15},
             "emotion": {"resentment": 0.7, "anger": 0.6},
         }}}]
-        assert extract_outcome(log, "protest_authorship") in (0.0, 1.0)
+        protest = extract_outcome(log, "protest_authorship")
+        assert 0.0 < protest < 1.0

@@ -1,4 +1,4 @@
-"""Continuous dynamics primitives — no hard thresholds."""
+"""Continuous dynamics primitives — smooth gates and saturating responses."""
 
 from __future__ import annotations
 
@@ -109,5 +109,5 @@ def impulse_response(intensity: float, sensitivity: float, saturation: float = 2
 
 
 def logistic_gate(x: float, center: float = 0.5, steepness: float = 6.0) -> float:
-    """Smooth gate in (0,1) — replaces `if x > threshold`."""
+    """Smooth gate in (0,1) for graded activation."""
     return sigmoid(x - center, scale=steepness)

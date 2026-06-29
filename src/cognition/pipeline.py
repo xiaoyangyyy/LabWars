@@ -1,4 +1,4 @@
-"""Cognitive dynamics pipeline — one round state evolution."""
+﻿"""Cognitive dynamics pipeline 鈥?one round state evolution."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from .memory import (
     apply_rehearsal,
     decay_memories,
     recall_memories,
+    reconsolidate_memories,
     write_memory,
 )
 
@@ -72,7 +73,7 @@ def commit_cognition_phase(
     disable_memory: bool = False,
     llm_adapter: Any | None = None,
 ) -> CognitiveStepResult:
-    """Phase B: after decisions — write memory, update states, apply action effects."""
+    """Phase B: after decisions 鈥?write memory, update states, apply action effects."""
     current_round = event.round
     world.project.current_round = current_round
 
@@ -90,6 +91,7 @@ def commit_cognition_phase(
         if recall and not disable_memory:
             apply_rehearsal(agent, recall.attention_weights, current_round)
 
+        reconsolidation = {"updated": []} if disable_memory else reconsolidate_memories(agent, event, recall, current_round)
         mem = None if disable_memory else write_memory(agent, event, current_round, llm_adapter=llm_adapter)
         emotion = update_emotion(agent, event, world.project.project, recall)
         beliefs = update_beliefs(agent, event, world.project.project, recall)
@@ -99,6 +101,7 @@ def commit_cognition_phase(
             "emotion": emotion,
             "beliefs": beliefs,
             "recall_audit": recall.audit if recall else {},
+            "memory_reconsolidation": reconsolidation,
         }
 
     if actions:
@@ -148,13 +151,12 @@ def apply_action_cognition(
     atype = action.get("type")
     intensity = float(action.get("intensity", 0.5))
 
-    if atype == "document_contribution":
-        update_ledger_from_action(world, agent_id, intensity)
+    update_ledger_from_action(world, agent_id, intensity, str(atype or ""))
 
     apply_action_belief_feedback(agent, str(atype or ""), intensity)
 
-    if atype in ESCALATED_ACTIONS and intensity > 0.5:
-        shock = impulse_response(max(0.0, intensity - 0.45), sensitivity=0.65, saturation=2.0)
+    if atype in ESCALATED_ACTIONS:
+        shock = impulse_response(intensity, sensitivity=0.36, saturation=2.4)
         agent.emotion.resentment = clamp(agent.emotion.resentment + shock * 0.22)
         agent.emotion.anger = clamp(agent.emotion.anger + shock * 0.16)
     elif atype in COMPLIANCE_ACTIONS:
@@ -166,7 +168,7 @@ def apply_action_cognition(
     agent.private_intent = action.get("private_intent", agent.private_intent)
     if not agent.private_intent:
         agent.private_intent = {
-            "goal": "secure_first_author" if agent.personality.credit_sensitivity > 0.6 else "lay_low",
+            "goal": "secure_first_author",
             "strategy": action.get("type", "lay_low"),
             "trust_pi": agent.beliefs.pi_fairness,
         }
@@ -224,3 +226,5 @@ def simulate_memory_decay_only(agent: Agent, rounds: int, emotional_arousal: flo
         decay_memories(agent, r)
         strengths.append(float(agent.memory[0]["strength"]))
     return strengths
+
+

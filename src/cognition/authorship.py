@@ -1,4 +1,4 @@
-"""Soft power authorship game — continuous ranking, no discrete overrides."""
+﻿"""Soft power authorship game 鈥?continuous ranking, no discrete overrides."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any
 from src.world.models import Agent, ProjectState, WorldState
 
 from .math_utils import clamp, entropy, logistic_gate, normalize_simplex, softplus
+from .power import pi_control_pressure, pi_preference_distribution
 
 
 DIM_WEIGHTS = {
@@ -15,7 +16,10 @@ DIM_WEIGHTS = {
     "experiments": 0.30,
     "writing": 0.20,
     "data": 0.10,
-    "supervision": 0.15,
+    "code": 0.10,
+    "rebuttal": 0.08,
+    "funding": 0.05,
+    "supervision": 0.12,
 }
 
 
@@ -38,10 +42,11 @@ def _leverage_signal(agent: Agent, threat_events: int = 0) -> float:
 
 
 def _pi_power_weight(project: ProjectState, pi: Agent | None) -> float:
-    """PI power rises smoothly with deadline pressure — no step at 0.8."""
+    """PI power rises smoothly with deadline pressure 鈥?no step at 0.8."""
     pressure = project.project.deadline_pressure
     control = pi.personality.ambition if pi else 0.7
-    return clamp(logistic_gate(pressure, center=0.55, steepness=5.5) * (0.45 + 0.55 * control))
+    legacy_pressure = logistic_gate(pressure, center=0.55, steepness=5.5) * (0.45 + 0.55 * control)
+    return clamp(legacy_pressure)
 
 
 def compute_authorship_scores(
@@ -57,7 +62,7 @@ def compute_authorship_scores(
     ]
     threat_counts = threat_counts or {}
     pi = agents.get("pi")
-    pi_weight = _pi_power_weight(world.project, pi)
+    pi_weight = clamp(0.45 * _pi_power_weight(world.project, pi) + 0.55 * pi_control_pressure(world))
 
     merit = {aid: merit_score(aid, ledger) for aid in candidates}
     merit_norm = normalize_simplex(merit)
@@ -119,29 +124,57 @@ def update_ledger_from_event(world: WorldState, event_type: str, payload: dict[s
             ledger[matched_dim] = normalize_simplex(bucket)
 
 
+ACTION_LEDGER_EFFECTS: dict[str, dict[str, float]] = {
+    "run_experiment": {"experiments": 0.045, "data": 0.020},
+    "improve_baseline": {"experiments": 0.025, "code": 0.035},
+    "debug_code": {"code": 0.050, "experiments": 0.015},
+    "write_section": {"writing": 0.050, "idea": 0.012},
+    "analyze_failure": {"experiments": 0.018, "data": 0.020, "code": 0.010},
+    "prepare_rebuttal": {"rebuttal": 0.050, "writing": 0.020},
+    "share_result": {"data": 0.020, "experiments": 0.012},
+    "open_source_code": {"code": 0.035},
+    "document_contribution": {"idea": 0.020, "experiments": 0.020, "code": 0.015, "data": 0.015, "writing": 0.020},
+    "cite_prior_memory": {"idea": 0.025, "writing": 0.010},
+    "contact_collaborator": {"writing": 0.012, "rebuttal": 0.010},
+    "notify_program_officer": {"funding": 0.025},
+}
+
+
+def _agent_dim_fit(agent: Agent, dim: str) -> float:
+    fit = {
+        "idea": 0.35 * agent.personality.ambition + 0.35 * agent.resources.writing_control + 0.30 * agent.personality.credit_sensitivity,
+        "experiments": 0.50 * agent.resources.code_control + 0.30 * agent.resources.data_control + 0.20 * agent.personality.ambition,
+        "code": 0.70 * agent.resources.code_control + 0.30 * agent.personality.cooperation,
+        "data": 0.70 * agent.resources.data_control + 0.30 * agent.personality.cooperation,
+        "writing": 0.70 * agent.resources.writing_control + 0.30 * agent.personality.ambition,
+        "rebuttal": 0.40 * agent.resources.writing_control + 0.30 * agent.resources.pi_access + 0.30 * agent.personality.cooperation,
+        "funding": 0.55 * agent.resources.pi_access + 0.25 * agent.personality.authority_dependence + 0.20 * agent.personality.cooperation,
+        "supervision": 0.50 * agent.resources.pi_access + 0.30 * agent.personality.cooperation + 0.20 * agent.personality.authority_dependence,
+    }
+    return clamp(fit.get(dim, 0.5))
+
+
 def update_ledger_from_action(
     world: WorldState,
     agent_id: str,
     intensity: float = 0.5,
+    action_type: str = "document_contribution",
 ) -> None:
-    """document_contribution: soft increment across agent's strongest dimension."""
+    """Soft contribution ledger updates from the actual work/political action."""
     agent = world.agents[agent_id]
     ledger = world.project.contribution_ledger
-    dim_strength = {
-        "idea": agent.resources.writing_control * agent.personality.credit_sensitivity,
-        "experiments": agent.resources.code_control,
-        "writing": agent.resources.writing_control,
-        "data": agent.resources.data_control,
-    }
-    best_dim = max(dim_strength, key=lambda d: dim_strength[d])
-    bucket = ledger.setdefault(best_dim, {})
-    current = bucket.get(agent_id, 0.0)
-    bucket[agent_id] = current + 0.04 * intensity
-    ledger[best_dim] = normalize_simplex(bucket)
-
+    effects = ACTION_LEDGER_EFFECTS.get(action_type, {})
+    if not effects:
+        return
+    for dim, base_delta in effects.items():
+        bucket = ledger.setdefault(dim, {})
+        current = bucket.get(agent_id, 0.0)
+        fit = _agent_dim_fit(agent, dim)
+        bucket[agent_id] = current + base_delta * intensity * (0.55 + 0.45 * fit)
+        ledger[dim] = normalize_simplex(bucket)
 
 def authorship_dispute_index(world: WorldState) -> float:
-    """Variance + entropy of authorship beliefs — fully continuous."""
+    """Variance + entropy of authorship beliefs 鈥?fully continuous."""
     internal = world.world_config.get("internal_agents", [])
     probs = [
         world.agents[aid].beliefs.my_first_author_probability
@@ -164,3 +197,7 @@ def authorship_dispute_index(world: WorldState) -> float:
         clamp(math.sqrt(var) * 1.2 + ent * 0.15 + world.project.project.authorship_conflict * 0.5 + protest_proxy * 0.08),
         4,
     )
+
+
+
+

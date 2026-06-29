@@ -36,19 +36,6 @@ class FakeLLMAdapter(LLMAdapter):
         action = candidates[h % len(candidates)]
         target = "pi" if agent_id != "pi" else "phd_a"
 
-        authorship_events = {"authorship_promise", "authorship_ambiguity", "authorship_draft", "credit_dispute"}
-        if event_type == "authorship_draft" and agent_id == "phd_a" and round_num >= 52:
-            fairness = payload.get("state", {}).get("beliefs", {}).get("pi_fairness", 0.5)
-            if fairness >= 0.55:
-                pool = [a for a in ("comply", "privately_lobby_pi", "delay_response", "document_contribution", "ask_for_authorship") if a in allowed]
-            elif fairness < 0.35:
-                pool = [a for a in ("confront", "rebel", "challenge_claim", "withdraw", "ask_for_authorship") if a in allowed]
-            else:
-                pool = [a for a in ("ask_for_authorship", "confront", "privately_lobby_pi", "comply", "delay_response") if a in allowed]
-            if pool:
-                action = pool[h % len(pool)]
-        elif event_type in authorship_events and "ask_for_authorship" in allowed and agent_id == "phd_a":
-            action = "ask_for_authorship"
 
         return {
             "primary_action": {"type": action, "target": target, "intensity": 0.55 + (h % 40) / 100.0},

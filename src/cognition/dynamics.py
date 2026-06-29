@@ -1,4 +1,4 @@
-"""Nonlinear coupling primitives — thresholds, hysteresis, saturation."""
+"""Nonlinear coupling primitives — smooth hysteresis and saturation."""
 
 from __future__ import annotations
 
@@ -72,27 +72,31 @@ def nonlinear_belief_target(
     Move belief with hysteresis: betrayal amplified by promise cluster;
     positive shocks (explicit promise, honored draft) use separate saturation.
     """
-    betrayal_amp = cluster_amp if signed_shock < 0 else cluster_amp * 0.15
+    negative_gate = logistic_gate(-signed_shock, center=0.0, steepness=12.0)
+    positive_gate = 1.0 - negative_gate
+    betrayal_amp = cluster_amp * (0.15 + 0.85 * negative_gate)
     amp = 1.0 + betrayal_amp
     magnitude = abs(signed_shock) * salience * amp
-    if signed_shock >= 0:
-        delta = impulse_response(magnitude, sensitivity=0.62 * positive_boost, saturation=2.8)
-    else:
-        delta = -impulse_response(magnitude, sensitivity=0.58, saturation=2.4)
+    pos_delta = impulse_response(magnitude, sensitivity=0.62 * positive_boost, saturation=2.8)
+    neg_delta = -impulse_response(magnitude, sensitivity=0.58, saturation=2.4)
+    return clamp(prior + positive_gate * pos_delta + negative_gate * neg_delta)
     return clamp(prior + delta)
 
 
 def nonlinear_recall_shift(prior: float, valence: float, strength: float) -> float:
     magnitude = abs(valence) * strength
     delta = impulse_response(magnitude, sensitivity=0.28, saturation=3.0)
-    return clamp(prior + (delta if valence >= 0 else -delta))
+    positive_gate = 1.0 - logistic_gate(-valence, center=0.0, steepness=12.0)
+    signed_delta = positive_gate * delta - (1.0 - positive_gate) * delta
+    return clamp(prior + signed_delta)
 
 
 def apply_saturating_emotion_delta(current: float, impulse: float) -> float:
-    if impulse >= 0:
-        return clamp(current + impulse_response(impulse, sensitivity=1.0, saturation=3.2))
-    return clamp(current - impulse_response(abs(impulse), sensitivity=1.0, saturation=3.2))
-
+    positive_gate = 1.0 - logistic_gate(-impulse, center=0.0, steepness=12.0)
+    magnitude = abs(impulse)
+    pos = clamp(current + impulse_response(magnitude, sensitivity=1.0, saturation=3.2))
+    neg = clamp(current - impulse_response(magnitude, sensitivity=1.0, saturation=3.2))
+    return clamp(positive_gate * pos + (1.0 - positive_gate) * neg)
 
 def escalation_potential_from_state(
     beliefs: dict[str, float],
@@ -123,7 +127,7 @@ def action_escalation_impulse(
 ) -> float:
     inten = max(0.0, min(1.0, intensity))
     if action_type in ESCALATED_ACTIONS:
-        damp = 0.55 + 0.45 * inten if inten >= 0.6 else inten * 0.75
+        damp = inten * (0.65 + 0.35 * logistic_gate(inten, center=0.6, steepness=8.0))
         return escalated_weight * damp
     if action_type in {"ask_for_authorship", "privately_lobby_pi"}:
         return soft_weight * inten
@@ -146,10 +150,9 @@ def draft_rank_shock(agent: Agent, event: EventAtom, cluster: float) -> tuple[fl
             return 0.28, 0.32
         return 0.05, 0.08
     cluster_gate = logistic_gate(cluster, center=0.35, steepness=4.0)
-    expected_rank = 0 if cluster_gate > 0.55 else 1
-    rank_gap = max(0, rank - expected_rank)
-    if rank_gap == 0 and rank == 0:
-        return 0.12, 0.15
-    fairness_shock = -0.22 * (1.0 + cluster_gate * 0.8) * (1.0 + 0.4 * rank_gap)
-    author_shock = -0.18 * rank_gap if rank_gap else 0.08
+    expected_rank = 1.0 - cluster_gate
+    rank_gap = max(0.0, rank - expected_rank)
+    honor_pull = logistic_gate(0.15 - rank_gap, center=0.0, steepness=8.0) * (1.0 - min(1.0, float(rank)))
+    fairness_shock = 0.12 * honor_pull - 0.22 * (1.0 + cluster_gate * 0.8) * (1.0 + 0.4 * rank_gap) * (1.0 - honor_pull)
+    author_shock = 0.08 * honor_pull - 0.18 * rank_gap * (1.0 - honor_pull)
     return fairness_shock, author_shock
