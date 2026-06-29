@@ -1,4 +1,4 @@
-"""Role Policy Agent — LLM-driven action selection with diversity guards."""
+﻿"""Role Policy Agent — LLM stance rendering constrained by sampled actions."""
 
 from __future__ import annotations
 
@@ -171,3 +171,4 @@ class RolePolicyAgent:
             if act:
                 actions.append(act)
         return actions
+

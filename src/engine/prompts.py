@@ -1,4 +1,4 @@
-"""LLM prompt builders for Role Policy and Memory agents."""
+﻿"""LLM prompt builders for Role Policy and Memory agents."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from src.world.models import Agent, EventAtom, RelationshipEdge, WorldState
 
 
 ROLE_POLICY_SYSTEM = """You are an agent in a long-horizon academic lab power-struggle simulation (LabWars).
-Choose actions ONLY from the sampled action candidate. Output valid JSON only — no markdown.
+Render public/private stance for the sampled action candidate. Output valid JSON only — no markdown.
 
 Rules:
 1. Reflect personality, beliefs, emotions, recalled memories, and the current event.
 2. public_position = public stance; private_intent = true goal (may diverge).
 3. Do not override sampled_action.type; the continuous action field already handled probabilities.
-4. Use action_candidates only to explain motives, not to choose a different action.
+4. Use action_candidates only to explain motives and tradeoffs, not to choose a different action.
 5. Memory behavioral_hooks are soft context, not rules.
 6. Match public/private wording to the sampled action and motive mixture."""
 
@@ -176,3 +176,5 @@ def build_memory_interpretation_prompt(
         },
         "avoid_repeating_phrases": recent_interp,
     }, ensure_ascii=False, indent=2)
+
+

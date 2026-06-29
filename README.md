@@ -12,7 +12,11 @@
 | [docs/01-世界模型与数据结构.md](docs/01-世界模型与数据结构.md) | 14 角色、Schema、事件、动作、60 轮骨架 |
 | [docs/02-认知与社会动力学.md](docs/02-认知与社会动力学.md) | 记忆/情绪/信念/关系图/署名博弈 |
 | [docs/03-仿真引擎与因果干预.md](docs/03-仿真引擎与因果干预.md) | 仿真循环、多 Agent 架构、因果引擎 |
-| [docs/04-实验方案与反编译报告.md](docs/04-实验方案与反编译报告.md) | 实验 A–D、指标、报告模板、验收 |
+| [docs/04-实验方案与反编译报告.md](docs/04-实验方案与反编译报告.md) | 实验 A-D、指标、报告模板、验收 |
+| [docs/05-连续状态驱动改造进展.md](docs/05-连续状态驱动改造进展.md) | 连续状态驱动改造记录 |
+| [docs/06-主动传递机制详解.md](docs/06-主动传递机制详解.md) | 事件/信息如何主动传递 |
+| [docs/07-记忆系统设计详解.md](docs/07-记忆系统设计详解.md) | 主观记忆系统设计 |
+| [docs/08-行为生成与LLM分工审计.md](docs/08-行为生成与LLM分工审计.md) | action field 与 LLM 分工边界 |
 
 ## 实施顺序
 
@@ -26,7 +30,7 @@ Part 1 → Part 2 → Part 3 → Part 4
 LabWars/
 ├── 00-总文档.md
 ├── README.md
-├── docs/           # 4 个子文档
+├── docs/           # 机制文档与审计说明
 ├── schemas/        # JSON Schema
 ├── config/         # Agent profile、events、interventions
 ├── src/            # 源代码
@@ -40,13 +44,13 @@ LabWars/
 ## 当前状态
 
 - [x] 项目文档体系建立（v0.1.0）
-- [x] Part 1–4 全部实现（**54 tests passed**）
-- [x] **Agent 决策与 memory interpretation 经 LLM**（OpenAI / Anthropic / Ollama）
+- [x] Part 1-4 全部实现（**94 tests passed**）
+- [x] **Primary action 由 continuous latent action field 采样；memory interpretation 与 public/private stance 经 LLM**（OpenAI / Anthropic / Ollama）
 - [x] LLM 不直接选择 primary action；连续 latent action field 采样动作，LLM 负责 public/private 解释
 
-## LLM 配置（必配）
+## LLM 配置（解释层）
 
-仿真通过连续 latent action field 采样 primary action；大模型负责记忆解释与 public/private 话术生成。配置见 [`config/llm.yaml`](config/llm.yaml)：
+仿真通过连续 latent action field 采样 primary action；大模型不直接选择真实行动，只负责记忆解释、公开立场、私下意图和话术生成。配置见 [`config/llm.yaml`](config/llm.yaml)：
 
 ```yaml
 # 智算 OpenAI 兼容（已验证 ai.azya.top）
@@ -112,3 +116,7 @@ python -m src.experiments aggregate -e A
 LabWars 当前不是让 LLM 直接选择真实行动。真实 primary action 由连续 latent action field 生成候选并采样；LLM 负责在 sampled action 约束下生成公开立场、私下意图和解释文本。
 
 可校准参数见 [`config/action_field.yaml`](config/action_field.yaml)。如需测试某组 motive weights 是否主导结果，可使用 `src.experiments.action_field_ablation.run_action_field_ablation` 做多 seed 消融。
+
+
+
+
