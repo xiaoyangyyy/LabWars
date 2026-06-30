@@ -1,4 +1,4 @@
-# LabWars Run Report — {{run_id}}
+﻿# LabWars Run Report 鈥?{{run_id}}
 
 > Experiment {{experiment_id}} / Condition {{condition_id}} / Seed {{seed}}
 
@@ -37,3 +37,7 @@
 ## 9. Recommended Probes
 
 {{probe_section}}
+
+## 10. Path-Level Causal Chain
+
+{{causal_path_section}}

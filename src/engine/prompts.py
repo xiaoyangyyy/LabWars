@@ -16,12 +16,26 @@ Render public/private stance for the sampled action candidate. Output valid JSON
 Rules:
 1. Reflect personality, beliefs, emotions, recalled memories, and the current event.
 2. public_position = public stance; private_intent = true goal (may diverge).
-3. Do not override sampled_action.type; the continuous action field already handled probabilities.
-4. Use action_candidates only to explain motives and tradeoffs, not to choose a different action.
+3. Do not override sampled_action.type; it was selected after continuous field scoring and LLM plausibility fusion.
+4. Use action_candidates only to explain motives and tradeoffs, not to choose a different action in this rendering step.
 5. Memory behavioral_hooks are soft context, not rules.
 6. Match public/private wording to the sampled action and motive mixture."""
 
 
+
+ACTION_SCORING_SYSTEM = """You score candidate actions for a long-horizon academic lab power-struggle simulation (LabWars).
+Output valid JSON only - no markdown.
+
+Rules:
+1. Score every candidate action independently for subjective plausibility from this agent's current state, recalled memories, relationship field, and current event.
+2. Return one score per input candidate. Do not add candidates, remove candidates, or write public/private stance.
+3. plausibility must be a continuous number in [0, 1]. Avoid threshold logic.
+4. These scores will be fused with structural field scores; they are not a free-form action override.
+5. reason should be short and explain the psychological fit.
+
+Output schema:
+{"candidate_scores":[{"type":"action_type","plausibility":0.0,"reason":"short rationale"}]}
+"""
 MEMORY_INTERPRETATION_SYSTEM = """You are generating a first-person memory interpretation for an academic lab agent.
 One short sentence (max 30 words). Subjective, emotionally colored, consistent with valence.
 Vary wording across events — avoid repeating the same sentence template.
@@ -78,6 +92,54 @@ def _relationship_summary(agent_id: str, edges: list[RelationshipEdge], top_n: i
         })
     return out
 
+
+
+def build_action_scoring_prompt(
+    agent: Agent,
+    event: EventAtom,
+    world: WorldState,
+    recall: RecallResult | None,
+    action_candidates: list[dict[str, Any]],
+) -> str:
+    state = {
+        "agent_id": agent.id,
+        "role": agent.role.value,
+        "round": event.round,
+        "personality": agent.personality.model_dump(),
+        "beliefs": agent.beliefs.model_dump(),
+        "emotion": agent.emotion.model_dump(),
+        "resources": agent.resources.model_dump(),
+    }
+    event_block = {
+        "event_id": event.event_id,
+        "type": event.type,
+        "source": event.source,
+        "targets": event.targets,
+        "framing": event.framing,
+        "memory_salience": event.memory_salience,
+        "objective_fact": event.objective_fact.raw_statement,
+        "payload": event.payload,
+    }
+    payload = {
+        "state": state,
+        "recent_action_history": recent_action_history(agent, n=5),
+        "memory_soft_hooks": memory_action_hints(agent, recall),
+        "event_action_hints": _event_action_hints(agent, event),
+        "recalled_memories": _top_memories(agent, recall),
+        "recall_field": {
+            "valence": recall.recall_field_valence if recall else 0.0,
+            "strength": recall.recall_field_strength if recall else 0.0,
+        },
+        "current_event": event_block,
+        "relationship_summary": _relationship_summary(agent.id, world.relationships),
+        "action_candidates": action_candidates,
+        "output_schema": {
+            "candidate_scores": [
+                {"type": "same as candidate.type", "plausibility": "0.0-1.0", "reason": "short rationale"}
+            ]
+        },
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 def build_role_policy_prompt(
     agent: Agent,
@@ -176,5 +238,3 @@ def build_memory_interpretation_prompt(
         },
         "avoid_repeating_phrases": recent_interp,
     }, ensure_ascii=False, indent=2)
-
-

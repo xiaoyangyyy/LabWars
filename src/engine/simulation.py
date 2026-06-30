@@ -52,6 +52,8 @@ class SimConfig:
     disable_state_events: bool = False
     experiment_id: str | None = None
     condition_id: str | None = None
+    enable_llm_action_scoring: bool = True
+    llm_action_score_mix: float = 0.35
 
     def to_dict(self) -> dict[str, Any]:
         llm_cfg = load_llm_config()
@@ -67,6 +69,8 @@ class SimConfig:
             "disable_state_events": self.disable_state_events,
             "experiment_id": self.experiment_id,
             "condition_id": self.condition_id,
+            "enable_llm_action_scoring": self.enable_llm_action_scoring,
+            "llm_action_score_mix": self.llm_action_score_mix,
             "llm_provider": self.llm_provider or llm_cfg.get("provider"),
             "llm_model": self.llm_model or llm_cfg.get("model"),
         }
@@ -148,6 +152,9 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
     probe = ProbeAgent()
 
     sim_config_dict = {
+        "seed": cfg.seed,
+        "enable_llm_action_scoring": cfg.enable_llm_action_scoring,
+        "llm_action_score_mix": cfg.llm_action_score_mix,
         "active_agents": cfg.active_agents,
         "offstage_agents": cfg.offstage_agents,
         "offstage_min_round": 21,
@@ -246,6 +253,3 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         log.write_jsonl(Path(cfg.output_dir) / f"run_{run_id}.jsonl")
 
     return log
-
-
-

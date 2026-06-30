@@ -1,17 +1,25 @@
-﻿"""Role Policy Agent — LLM stance rendering constrained by sampled actions."""
+﻿"""Role Policy Agent - LLM candidate scoring plus constrained stance rendering."""
 
 from __future__ import annotations
 
+import hashlib
+import math
+import random
 from typing import Any
 
 from src.cognition.memory import RecallResult
-from src.engine.action_selection import generate_action_candidates, sample_action_candidate
+from src.engine.action_selection import generate_action_candidates
 from src.engine.diversity import (
     avoid_actions,
     filter_allowed_actions,
 )
 from src.engine.llm_adapter import LLMAdapter, LLMError
-from src.engine.prompts import ROLE_POLICY_SYSTEM, build_role_policy_prompt
+from src.engine.prompts import (
+    ACTION_SCORING_SYSTEM,
+    ROLE_POLICY_SYSTEM,
+    build_action_scoring_prompt,
+    build_role_policy_prompt,
+)
 from src.world.actions import ActionType, get_allowed_actions
 from src.world.models import Agent, EventAtom, WorldState
 
@@ -76,10 +84,100 @@ def _normalize_action_response(
     }
 
 
+def _softmax(values: list[float], temperature: float = 0.22) -> list[float]:
+    if not values:
+        return []
+    temp = max(temperature, 1e-4)
+    peak = max(values)
+    exps = [math.exp((v - peak) / temp) for v in values]
+    total = sum(exps) or 1.0
+    return [e / total for e in exps]
+
+
+def _stable_rng(seed: int, round_num: int, agent_id: str, suffix: str) -> random.Random:
+    h = hashlib.sha256(f"{seed}:{round_num}:{agent_id}:{suffix}".encode("utf-8")).hexdigest()
+    return random.Random(int(h[:16], 16))
+
+
+def _sample_payload(payloads: list[dict[str, Any]], *, seed: int, round_num: int, agent_id: str) -> dict[str, Any]:
+    if not payloads:
+        raise ValueError("No action payloads to sample")
+    rng = _stable_rng(seed, round_num, agent_id, "llm_fused")
+    needle = rng.random()
+    total = 0.0
+    for payload in payloads:
+        total += float(payload.get("probability", 0.0))
+        if needle <= total:
+            return payload
+    return payloads[-1]
+
+
+def _coerce_score(value: Any) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return 0.5
+    return max(0.0, min(1.0, score))
+
+
 class RolePolicyAgent:
     def __init__(self, llm: LLMAdapter, max_retries: int = 3) -> None:
         self.llm = llm
         self.max_retries = max_retries
+
+    def _score_candidates(
+        self,
+        agent: Agent,
+        event: EventAtom,
+        world: WorldState,
+        recall: RecallResult | None,
+        candidate_payload: list[dict[str, Any]],
+        config: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Ask the LLM for subjective candidate plausibility, then fuse with field scores."""
+        if not config.get("enable_llm_action_scoring", True):
+            return candidate_payload, {"enabled": False, "source": "field_only"}
+
+        mix = float(config.get("llm_action_score_mix", 0.35))
+        try:
+            prompt = build_action_scoring_prompt(agent, event, world, recall, candidate_payload)
+            raw = self.llm.complete_json(ACTION_SCORING_SYSTEM, prompt)
+        except (LLMError, KeyError, TypeError, ValueError) as exc:
+            return candidate_payload, {"enabled": True, "source": "field_only_fallback", "error": str(exc)}
+
+        raw_scores = raw.get("candidate_scores", [])
+        score_map: dict[str, dict[str, Any]] = {}
+        if isinstance(raw_scores, list):
+            for item in raw_scores:
+                if not isinstance(item, dict):
+                    continue
+                action_type = str(item.get("type", ""))
+                if action_type:
+                    score_map[action_type] = item
+
+        fused: list[dict[str, Any]] = []
+        for candidate in candidate_payload:
+            item = dict(candidate)
+            score_item = score_map.get(str(candidate.get("type", "")), {})
+            llm_score = _coerce_score(score_item.get("plausibility", 0.5))
+            field_tendency = float(candidate.get("tendency", 0.0))
+            fused_tendency = field_tendency + mix * (llm_score - 0.5)
+            item["field_probability"] = candidate.get("probability", 0.0)
+            item["llm_score"] = round(llm_score, 4)
+            item["llm_score_reason"] = str(score_item.get("reason", ""))[:160]
+            item["fused_tendency"] = round(fused_tendency, 4)
+            item["scoring_source"] = "field_llm_fused"
+            fused.append(item)
+
+        probs = _softmax([float(item["fused_tendency"]) for item in fused], temperature=0.22)
+        for item, prob in zip(fused, probs):
+            item["probability"] = round(prob, 5)
+        return fused, {
+            "enabled": True,
+            "source": "field_llm_fused",
+            "mix": mix,
+            "raw": raw,
+        }
 
     def decide(
         self,
@@ -113,14 +211,21 @@ class RolePolicyAgent:
             avoid_actions=dynamic_avoid,
             seed=seed,
         )
-        selected = sample_action_candidate(
-            candidates,
+        base_payload = [c.to_dict() for c in candidates]
+        candidate_payload, scoring_audit = self._score_candidates(
+            agent,
+            event,
+            world,
+            recall,
+            base_payload,
+            config,
+        )
+        selected_payload = _sample_payload(
+            candidate_payload,
             seed=seed,
             round_num=event.round,
             agent_id=agent.id,
         )
-        candidate_payload = [c.to_dict() for c in candidates]
-        selected_payload = selected.to_dict()
 
         last_error = ""
         retry_note = ""
@@ -141,16 +246,17 @@ class RolePolicyAgent:
             try:
                 raw = self.llm.complete_json(ROLE_POLICY_SYSTEM, user_prompt)
                 raw["primary_action"] = {
-                    "type": selected.type,
-                    "target": selected.target,
-                    "intensity": selected.intensity,
+                    "type": selected_payload["type"],
+                    "target": selected_payload["target"],
+                    "intensity": selected_payload["intensity"],
                 }
                 act = _normalize_action_response(raw, agent, event, world, allowed)
                 private = act.setdefault("private_intent", {})
-                private.setdefault("private_motives", selected_payload["motives"])
+                private.setdefault("private_motives", selected_payload.get("motives", {}))
                 act["action_candidates"] = candidate_payload
                 act["selected_action"] = selected_payload
-                act["private_motives"] = selected_payload["motives"]
+                act["private_motives"] = selected_payload.get("motives", {})
+                act["llm_action_scoring"] = scoring_audit
                 return act
             except (LLMError, KeyError, TypeError, ValueError) as exc:
                 last_error = str(exc)
@@ -171,4 +277,3 @@ class RolePolicyAgent:
             if act:
                 actions.append(act)
         return actions
-

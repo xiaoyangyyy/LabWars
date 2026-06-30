@@ -1,4 +1,4 @@
-"""Agent MRI decompilation report generator."""
+﻿"""Agent MRI decompilation report generator."""
 
 from __future__ import annotations
 
@@ -45,6 +45,35 @@ def _format_curve(curve: list[dict[str, float]], key: str) -> str:
     return "\n".join(f"- R{p['round']}: {key}={p.get(key, 0):.3f}" for p in sample)
 
 
+
+def _format_causal_path(path: dict[str, Any]) -> str:
+    if not path or not path.get("nodes"):
+        return "_No path-level causal chain extracted._"
+    lines = [f"Finding: {path.get('finding', '')}".strip()]
+    for node in path.get("nodes", []):
+        metrics = []
+        if "strength" in node:
+            metrics.append(f"strength={float(node.get('strength', 0)):.2f}")
+        if "valence" in node:
+            metrics.append(f"valence={float(node.get('valence', 0)):+.2f}")
+        if "intensity" in node:
+            metrics.append(f"intensity={float(node.get('intensity', 0)):.2f}")
+        suffix = f" ({', '.join(metrics)})" if metrics else ""
+        lines.append(
+            f"- R{node.get('round')} -> {node.get('kind')}:{node.get('label')} "
+            f"[{node.get('event_id') or 'action'}]{suffix} - {node.get('detail', '')}"
+        )
+    outcome = path.get("outcome_summary", {})
+    lines.append(
+        "Outcome: "
+        f"protest={float(outcome.get('protest_authorship', 0)):.3f}, "
+        f"escalation={float(outcome.get('authorship_escalation_score', 0)):.3f}, "
+        f"memory_cluster={float(outcome.get('memory_authorship_cluster_strength', 0)):.3f}, "
+        f"promise_broken_R52={float(outcome.get('promise_broken_strength_r52', 0)):.3f}."
+    )
+    lines.append(f"Counterfactual: {path.get('counterfactual_hint', '')}")
+    return "\n".join(lines)
+
 def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None) -> str:
     metrics = metrics or compute_run_metrics(log)
     outcomes = metrics["outcomes"]
@@ -58,7 +87,7 @@ def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None)
     )
 
     memory_causal = (
-        f"- Authorship memory cluster (R3–R40): {outcomes.get('memory_authorship_cluster_strength', 0):.3f}\n"
+        f"- Authorship memory cluster (R3鈥揜40): {outcomes.get('memory_authorship_cluster_strength', 0):.3f}\n"
         f"- Promise broken strength @R52: {outcomes.get('promise_broken_strength_r52', 0):.3f}\n"
         f"- Confound ladder proxy: memory contribution is reported as a continuous mediation fraction"
     )
@@ -83,14 +112,14 @@ def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None)
 
     probes = log.outcomes.get("probe_suggestions") or []
     probe_text = "\n".join(
-        f"- R{p.get('round')}: {p.get('variant')} — {p.get('reason')}" for p in probes
+        f"- R{p.get('round')}: {p.get('variant')} - {p.get('reason')}" for p in probes
     ) or "_No probe suggestions._"
 
     replacements = {
         "{{run_id}}": log.run_id,
-        "{{experiment_id}}": str(metrics.get("experiment_id") or log.config.get("experiment_id", "—")),
-        "{{condition_id}}": str(metrics.get("condition_id") or log.config.get("condition_id", "—")),
-        "{{seed}}": str(metrics.get("seed") or log.config.get("seed", "—")),
+        "{{experiment_id}}": str(metrics.get("experiment_id") or log.config.get("experiment_id", "NA")),
+        "{{condition_id}}": str(metrics.get("condition_id") or log.config.get("condition_id", "NA")),
+        "{{seed}}": str(metrics.get("seed") or log.config.get("seed", "NA")),
         "{{timeline_section}}": _format_timeline(metrics.get("timeline", [])),
         "{{latent_section}}": latent,
         "{{trust_section}}": _format_trust_snapshots(metrics.get("trust_snapshots", {})),
@@ -100,6 +129,7 @@ def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None)
         "{{divergence_section}}": div_text,
         "{{failure_section}}": failure,
         "{{probe_section}}": probe_text,
+        "{{causal_path_section}}": _format_causal_path(metrics.get("path_level_causal_chain", {})),
     }
     text = template
     for k, v in replacements.items():

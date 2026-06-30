@@ -1,4 +1,4 @@
-"""Part 4 experiment integration tests."""
+﻿"""Part 4 experiment integration tests."""
 
 from __future__ import annotations
 
@@ -58,10 +58,10 @@ class TestMetricsAndReport:
         assert "timeline" in metrics
         assert "trust_fragmentation_curve" in metrics
 
-    def test_report_has_nine_sections(self, tmp_path):
+    def test_report_has_ten_sections(self, tmp_path):
         result = run_single("A", seed=5, condition_id="A1", max_rounds=10)
         text = generate_report_from_log(result["log"])
-        for i in range(1, 10):
+        for i in range(1, 11):
             assert f"## {i}." in text
         path = generate_report(
             experiment_id="A",

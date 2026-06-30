@@ -37,8 +37,107 @@ def compute_run_metrics(log: RunLog) -> dict[str, Any]:
         "behavioral_trace_metrics": _behavioral_trace_metrics(log),
         "critic_audit_metrics": _critic_audit_metrics(log),
         "power_surface_final": _power_surface_from_log(log),
+        "path_level_causal_chain": _path_level_causal_chain(log),
     }
 
+
+
+def _path_level_causal_chain(log: RunLog, agent_id: str = "phd_a") -> dict[str, Any]:
+    """Extract a readable long-horizon causal path from events, memory writes, and actions.
+
+    This is a report/explanation artifact, not a simulation trigger: it summarizes the
+    continuous trajectory after the run has already happened.
+    """
+    salient_event_types = {
+        "authorship_promise",
+        "authorship_ambiguity",
+        "authorship_draft",
+        "credit_dispute",
+        "private_lobbying",
+        "narrative_change",
+        "alumni_warning",
+        "submission_decision",
+    }
+    protest_actions = {
+        "ask_for_authorship",
+        "privately_lobby_pi",
+        "confront",
+        "challenge_claim",
+        "withdraw",
+        "rebel",
+        "document_contribution",
+    }
+    nodes: list[dict[str, Any]] = []
+
+    event_by_id = {e.get("event_id"): e for e in log.events}
+    for event in log.events:
+        if event.get("type") in salient_event_types or "authorship" in str(event.get("type", "")):
+            nodes.append({
+                "round": int(event.get("round", 0)),
+                "kind": "event",
+                "label": str(event.get("type")),
+                "event_id": event.get("event_id"),
+                "detail": event.get("payload", {}).get("summary") or event.get("payload", {}).get("generator") or "state event",
+            })
+
+    for rec in log.round_records:
+        mem = rec.get("agent_deltas", {}).get(agent_id, {}).get("memory_written")
+        if not mem:
+            continue
+        ctype = str(mem.get("content_type", ""))
+        if "authorship" not in ctype and "promise" not in ctype:
+            continue
+        event_ref = mem.get("event_ref")
+        event = event_by_id.get(event_ref, {})
+        nodes.append({
+            "round": int(rec.get("round", 0)),
+            "kind": "memory",
+            "label": ctype,
+            "event_id": event_ref,
+            "strength": float(mem.get("strength", 0.0)),
+            "valence": float(mem.get("valence", 0.0)),
+            "detail": mem.get("interpretation") or event.get("type") or "memory write",
+        })
+
+    for action in log.actions:
+        if action.get("agent") != agent_id or action.get("type") not in protest_actions:
+            continue
+        nodes.append({
+            "round": int(action.get("round", 0)),
+            "kind": "action",
+            "label": str(action.get("type")),
+            "event_id": action.get("event_id"),
+            "intensity": float(action.get("intensity", 0.0)),
+            "detail": action.get("public_position", {}).get("authorship_claim") or action.get("target") or "action",
+        })
+
+    nodes.sort(key=lambda n: (n.get("round", 0), {"event": 0, "memory": 1, "action": 2}.get(n.get("kind"), 3)))
+    compact: list[dict[str, Any]] = []
+    seen: set[tuple[int, str, str]] = set()
+    for node in nodes:
+        key = (int(node.get("round", 0)), str(node.get("kind")), str(node.get("label")))
+        if key in seen:
+            continue
+        seen.add(key)
+        compact.append(node)
+
+    outcomes = log.outcomes
+    return {
+        "agent": agent_id,
+        "nodes": compact[:18],
+        "finding": (
+            "Final authorship escalation is summarized as a mediated path through authorship memory, "
+            "trust erosion, and late-stage authorship pressure rather than a single draft event."
+        ),
+        "outcome_summary": {
+            "protest_authorship": outcomes.get("protest_authorship", 0.0),
+            "authorship_escalation_score": outcomes.get("authorship_escalation_score", 0.0),
+            "memory_authorship_cluster_strength": outcomes.get("memory_authorship_cluster_strength", 0.0),
+            "promise_broken_strength_r52": outcomes.get("promise_broken_strength_r52", 0.0),
+            "authority_compliance": outcomes.get("authority_compliance", 0.0),
+        },
+        "counterfactual_hint": "Compare against memory-delete or reframing conditions to estimate how much of the path is mediated by the authorship memory cluster.",
+    }
 
 def _causal_memory_timeline(log: RunLog, agent_id: str = "phd_a", limit: int = 8) -> list[dict[str, Any]]:
     nodes: list[dict[str, Any]] = []
@@ -234,5 +333,3 @@ def welch_t_stat(a: list[float], b: list[float]) -> float:
     vb = sum((x - mb) ** 2 for x in b) / (len(b) - 1)
     denom = math.sqrt(va / len(a) + vb / len(b))
     return (ma - mb) / denom if denom > 1e-12 else 0.0
-
-

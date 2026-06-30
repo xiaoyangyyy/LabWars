@@ -44,13 +44,13 @@ LabWars/
 ## 当前状态
 
 - [x] 项目文档体系建立（v0.1.0）
-- [x] Part 1-4 全部实现（**94 tests passed**）
-- [x] **Primary action 由 continuous latent action field 采样；memory interpretation 与 public/private stance 经 LLM**（OpenAI / Anthropic / Ollama）
-- [x] LLM 不直接选择 primary action；连续 latent action field 采样动作，LLM 负责 public/private 解释
+- [x] Part 1-4 全部实现（**96 tests passed**）
+- [x] **Primary action 由 continuous latent action field 生成候选，并融合 LLM candidate scoring 后采样；memory interpretation 与 public/private stance 经 LLM**（OpenAI / Anthropic / Ollama）
+- [x] LLM 不自由覆盖 primary action；它对候选动作做 subjective plausibility scoring，系统融合 field_score 与 llm_score 后采样真实行动
 
-## LLM 配置（解释层）
+## LLM 配置（候选评分 + 解释层）
 
-仿真通过连续 latent action field 采样 primary action；大模型不直接选择真实行动，只负责记忆解释、公开立场、私下意图和话术生成。配置见 [`config/llm.yaml`](config/llm.yaml)：
+仿真先由 continuous latent action field 生成候选动作，再由 LLM 对候选动作进行 subjective plausibility scoring；系统融合 field_score 与 llm_score 后采样 primary action。LLM 同时负责记忆解释、公开立场、私下意图和话术生成。配置见 [`config/llm.yaml`](config/llm.yaml)：
 
 ```yaml
 # 智算 OpenAI 兼容（已验证 ai.azya.top）
@@ -113,10 +113,6 @@ python -m src.experiments aggregate -e A
 
 ## Action Field 与 LLM 分工
 
-LabWars 当前不是让 LLM 直接选择真实行动。真实 primary action 由连续 latent action field 生成候选并采样；LLM 负责在 sampled action 约束下生成公开立场、私下意图和解释文本。
+LabWars 当前不是让 LLM 自由生成真实行动。真实流程是：continuous latent action field 生成候选动作和结构先验；LLM 对每个候选动作评分；系统融合 `field_score` 与 `llm_score` 后采样 primary action；LLM 再在 selected action 约束下生成公开立场、私下意图和解释文本。
 
 可校准参数见 [`config/action_field.yaml`](config/action_field.yaml)。如需测试某组 motive weights 是否主导结果，可使用 `src.experiments.action_field_ablation.run_action_field_ablation` 做多 seed 消融。
-
-
-
-

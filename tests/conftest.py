@@ -1,4 +1,4 @@
-"""Shared test fixtures — inject deterministic fake LLM (not heuristic policy)."""
+﻿"""Shared test fixtures - inject deterministic fake LLM."""
 
 from __future__ import annotations
 
@@ -12,10 +12,12 @@ from src.engine.llm_adapter import LLMAdapter
 
 
 class FakeLLMAdapter(LLMAdapter):
-    """Test double: schema-valid JSON from prompt hash. Does not implement softmax/heuristic scoring."""
+    """Schema-valid JSON, including deterministic LLM candidate plausibility scoring."""
 
     def complete_json(self, system: str, user: str) -> dict[str, Any]:
-        if "memory interpretation" in system.lower():
+        lower_system = system.lower()
+
+        if "memory interpretation" in lower_system:
             payload = json.loads(user)
             return {
                 "interpretation": (
@@ -23,6 +25,20 @@ class FakeLLMAdapter(LLMAdapter):
                     f"{'threatening' if payload.get('valence', 0) < 0 else 'reassuring'} to my credit."
                 )
             }
+
+        if "candidate_scores" in lower_system or "score candidate actions" in lower_system:
+            payload = json.loads(user)
+            scores = []
+            for candidate in payload.get("action_candidates", []):
+                action_type = candidate.get("type", "document_contribution")
+                h = int(hashlib.sha256(f"{user}{action_type}".encode()).hexdigest(), 16)
+                plausibility = 0.2 + (h % 70) / 100.0
+                scores.append({
+                    "type": action_type,
+                    "plausibility": round(min(0.95, plausibility), 4),
+                    "reason": f"state-compatible {action_type}",
+                })
+            return {"candidate_scores": scores}
 
         payload = json.loads(user)
         allowed = payload.get("allowed_actions") or ["document_contribution"]
@@ -35,7 +51,6 @@ class FakeLLMAdapter(LLMAdapter):
         h = int(hashlib.sha256(f"{user}{round_num}{salt}".encode()).hexdigest(), 16)
         action = candidates[h % len(candidates)]
         target = "pi" if agent_id != "pi" else "phd_a"
-
 
         return {
             "primary_action": {"type": action, "target": target, "intensity": 0.55 + (h % 40) / 100.0},

@@ -1,12 +1,12 @@
 ﻿# 行为生成与 LLM 分工审计
 
-本文专门澄清 LabWars 当前的行为生成机制，避免把系统误读成“LLM 根据记忆自主选择 action”。
+本文专门澄清 LabWars 当前的行为生成机制，避免把系统误读成“LLM 自由写剧情”或“纯手写规则触发”。
 
 结论先说清楚：
 
-> LabWars 当前不是 LLM 自主行动系统，而是 **continuous latent action field 采样真实 primary action，LLM 在 sampled action 约束下生成 public/private stance、memory interpretation 和 wording**。
+> LabWars 当前是 **continuous latent action field proposes candidates -> LLM scores candidate plausibility -> fused sampler selects primary action -> LLM renders public/private stance and memory-compatible narration**。
 
-这是一种可复现、可消融、可审计的社会动力学仿真架构。
+这不是 LLM 自由行动系统，也不是旧式阈值规则系统，而是一种可复现、可消融、可审计的 hybrid social simulation。
 
 ---
 
@@ -17,8 +17,8 @@
 | 环节 | 文件 |
 |---|---|
 | 候选动作生成 | `src/engine/action_selection.py` |
-| sampled action 固定 | `src/engine/role_policy.py` |
-| LLM prompt 约束 | `src/engine/prompts.py` |
+| LLM 候选评分与融合采样 | `src/engine/role_policy.py` |
+| scoring/rendering prompt | `src/engine/prompts.py` |
 | LLM drift 审计 | `src/engine/critic.py` |
 | action-field 参数 | `config/action_field.yaml` |
 | action-field 消融 | `src/experiments/action_field_ablation.py` |
@@ -27,11 +27,12 @@
 
 ```text
 agent latent state + event + recall + relationship + project state
-  -> generate_action_candidates()
-  -> sample_action_candidate()
+  -> generate_action_candidates()                    # structural field prior
+  -> LLM scores each candidate plausibility           # subjective model layer
+  -> fused_tendency = field_tendency + mix*(llm_score - 0.5)
+  -> softmax(fused_tendency) + seeded sampling
   -> selected primary_action
-  -> LLM receives sampled_action and action_candidates
-  -> LLM generates public_position / private_intent / wording
+  -> LLM renders public_position / private_intent / wording
   -> RolePolicyAgent overwrites raw.primary_action with selected action
   -> Critic checks wording/action drift
 ```
@@ -40,13 +41,13 @@ agent latent state + event + recall + relationship + project state
 
 ```python
 raw["primary_action"] = {
-    "type": selected.type,
-    "target": selected.target,
-    "intensity": selected.intensity,
+    "type": selected_payload["type"],
+    "target": selected_payload["target"],
+    "intensity": selected_payload["intensity"],
 }
 ```
 
-也就是说，LLM 不能把 `confront` 改成 `comply`，也不能把 `document_contribution` 改成 `ask_for_authorship`。
+也就是说，LLM 参与评分，但不能在 rendering 阶段把 `confront` 偷换成 `comply`，也不能把 `document_contribution` 偷换成 `ask_for_authorship`。
 
 ---
 
@@ -54,24 +55,26 @@ raw["primary_action"] = {
 
 | 层 | 是否由 LLM 决定 | 说明 |
 |---|---:|---|
-| primary action type | 否 | 由 continuous action field 采样 |
-| action target | 否 | 由 sampled candidate 固定 |
-| action intensity | 否 | 由 tendency -> intensity curve 生成 |
+| action candidate set | 否 | 由 continuous action field 从 allowed action space 生成 |
+| candidate plausibility score | 是 | LLM 根据状态、记忆、关系、事件给每个候选动作打分 |
+| primary action type | 共同决定 | field prior + LLM score 融合后采样 |
+| action target | 主要由 field 决定 | selected candidate 固定，normalizer 只做合法性修正 |
+| action intensity | 主要由 field 决定 | tendency -> intensity curve 生成 |
 | public_position | 是 | LLM 生成公开立场 |
 | private_intent | 是 | LLM 生成私下目标/策略描述 |
 | memory interpretation | 是 | LLM 生成第一人称主观记忆文本 |
 | 数值状态更新 | 否 | 情绪、信念、关系、ledger 由动力学函数更新 |
 | 事件概率 | 否 | 由 state-driven event field 计算 |
 
-所以准确表述是：
+准确表述是：
 
 ```text
-LLM is an interpretation and stance renderer, not the primary behavioral policy.
+LLM is a candidate plausibility scorer plus interpretation/stance renderer, not an unconstrained behavioral policy.
 ```
 
 ---
 
-## 3. 为什么不让 LLM 直接选 action？
+## 3. 为什么不让 LLM 完全自由选 action？
 
 LLM 直接选 action 的优点是 open-ended，但风险很大：
 
@@ -80,26 +83,26 @@ LLM 直接选 action 的优点是 open-ended，但风险很大：
 | 不可复现 | 同一状态不同调用可能给出完全不同动作 |
 | 容易剧情化 | LLM 倾向写戏剧性冲突，而不是连续社会动力学 |
 | 难做反事实 | 无法判断结果来自状态变量还是 prompt 风格 |
-| 难做消融 | 无法单独移除某个 motive weight |
+| 难做消融 | 无法单独移除某个 motive weight 或 field prior |
 | 难审计 | 行为来源不容易反编译 |
 
-LabWars 的目标不是生成好看的故事，而是反编译机制。因此当前设计优先选择：
+所以当前方案选择中间路线：
 
 ```text
-可复现 continuous policy + LLM subjective narration
+可复现 continuous policy prior + LLM subjective plausibility scoring + LLM narration
 ```
 
 这让系统可以回答：
 
 ```text
-如果删除 PI 承诺记忆，action probability 怎么变？
+如果删除 PI 承诺记忆，LLM score 和 fused probability 怎么变？
 如果把 confront 对 resentment_drive 的权重置零，署名抗议还会出现吗？
-如果关闭 state events，只 replay anchors，结果差多少？
+如果关闭 LLM scoring，只用 field prior，行为轨迹差多少？
 ```
 
 ---
 
-## 4. Action Field 不是阈值法，但仍是参数化模型
+## 4. Action Field 不是阈值法，但仍是参数化 baseline
 
 `action_selection.py` 已经不是：
 
@@ -111,27 +114,27 @@ if resentment > 0.7:
 而是：
 
 ```text
-action_tendency = Σ motive_i * weight_i
-probability = softmax(tendency / temperature)
+field_tendency = Σ motive_i * weight_i + event_affinity + noise + repetition_effect
+llm_score = LLM(candidate, state, memory, relationship, event)
+fused_tendency = field_tendency + mix*(llm_score - 0.5)
+probability = softmax(fused_tendency / temperature)
 selected_action = sample(probability)
 ```
 
-但这仍然不是“LLM 自发社会行为”。更准确地说：
+但 motive weights 仍然是结构先验，不应该被宣传成“完全无启发式”。更准确地说：
 
 ```text
-hand-designed social-psychological dynamical policy
+calibratable social-psychological field prior
++ LLM candidate plausibility scoring
 + continuous sampling
-+ calibratable parameters
 + LLM interpretation layer
 ```
 
-这句话应该成为项目对外介绍的边界。
-
 ---
 
-## 5. Motive weights 已经外置为可校准参数
+## 5. Motive weights 是 baseline/prior，不是最终真理
 
-当前不再把 motive weights 只藏在代码里，而是外置到：
+当前 motive weights 外置到：
 
 ```text
 config/action_field.yaml
@@ -152,67 +155,49 @@ motive_weights:
     authorship_anxiety: 0.25
     authority_pressure: 0.10
     caution: -0.35
-
-event_affinity:
-  authorship_ambiguity:
-    privately_lobby_pi: 0.16
-    ask_for_authorship: 0.13
-    document_contribution: 0.10
-    confront: 0.06
 ```
 
-每个 `ActionCandidate` 会记录参数来源：
+每个 action log 会保留：
 
 ```json
 {
-  "type": "confront",
-  "tendency": 0.481,
-  "probability": 0.184,
-  "parameter_source": "D:/Labwar/config/action_field.yaml"
+  "action_candidates": [...],
+  "selected_action": {
+    "type": "confront",
+    "field_probability": 0.184,
+    "llm_score": 0.720,
+    "fused_tendency": 0.558,
+    "scoring_source": "field_llm_fused"
+  },
+  "llm_action_scoring": {
+    "enabled": true,
+    "source": "field_llm_fused",
+    "mix": 0.35
+  }
 }
 ```
 
-如果使用 runtime override，会记录：
+这样可以区分：
 
-```json
-"parameter_source": "runtime_override"
-```
+| 来源 | 含义 |
+|---|---|
+| `field_probability` | 手写结构场给出的 baseline 概率 |
+| `llm_score` | LLM 认为该候选动作对当前 agent 是否心理合理 |
+| `fused_tendency` | 融合后的采样倾向 |
+| `scoring_source` | 当前是 field-only 还是 field+LLM |
 
 ---
 
-## 6. 如何做 action-field 消融？
+## 6. 如何做消融？
 
-实现位置：`src/experiments/action_field_ablation.py`
+可以分别消融两层：
 
-例子：测试“confront 是否过度依赖 resentment_drive”：
-
-```python
-from src.engine.simulation import SimConfig
-from src.experiments.action_field_ablation import run_action_field_ablation
-
-result = run_action_field_ablation(
-    SimConfig(max_rounds=60, interventions=[]),
-    {
-        "motive_weights": {
-            "confront": {"resentment_drive": 0.0}
-        }
-    },
-    seeds=list(range(10)),
-    outcome="authorship_escalation_score",
-)
-```
-
-输出会比较：
-
-| 字段 | 含义 |
-|---|---|
-| `Y_control` | baseline action-field 下的结果 |
-| `Y_ablation` | override 权重后的结果 |
-| `delta` | ablation - control |
-| `control_mean` | 多 seed baseline 均值 |
-| `ablation_mean` | 多 seed ablation 均值 |
-
-这可以避免把“手写权重导致的冲突”误解成“agent 自然表现出的社会行为”。
+| 消融 | 做法 | 看什么 |
+|---|---|---|
+| field weight ablation | override `config/action_field.yaml` 中某个 motive weight | 冲突是否由手写 prior 主导 |
+| LLM scoring ablation | `SimConfig(enable_llm_action_scoring=False)` | LLM 主观评分是否改变轨迹 |
+| mix sensitivity | 调 `llm_action_score_mix` | 系统对 LLM 评分权重是否敏感 |
+| memory delete | 删除 promise/authorship memory | 长程记忆是否中介 R52 escalation |
 
 ---
 
@@ -221,47 +206,38 @@ result = run_action_field_ablation(
 不准确：
 
 ```text
-LLM agents decide actions based on long-term memory.
+LLM agents freely decide actions based on long-term memory.
 ```
 
 更准确：
 
 ```text
-LabWars uses continuous latent action fields to sample behavior from agent state, memory, relationship, project pressure, and institutional power. LLMs generate subjective memory interpretations and public/private stance under the sampled-action constraint.
+LabWars uses continuous latent action fields as a structural behavioral prior, asks LLMs to score candidate action plausibility under subjective memory and relationship context, then samples actions from the fused field. LLMs also generate memory interpretations and public/private stance under the selected-action constraint.
 ```
 
 中文：
 
 ```text
-LabWars 用连续 latent action field 从人格、信念、情绪、记忆、关系、项目压力和制度性权力中采样真实行动；LLM 在 sampled action 约束下生成主观记忆解释、公开立场和私下意图。
+LabWars 使用连续 latent action field 作为结构性行为先验，让 LLM 在主观记忆和关系语境下对候选动作评分，再从融合后的行为场中采样真实行动。LLM 同时在 selected action 约束下生成记忆解释、公开立场和私下意图。
 ```
 
 ---
 
-## 8. 下一步如果要更像“大模型行为”怎么办？
+## 8. 现在比旧版强在哪里？
 
-可以做双轨 policy，对比两种机制：
-
-| policy | 描述 | 用途 |
-|---|---|---|
-| `latent_field_policy` | 当前默认，可复现、可消融 | 主仿真和因果实验 |
-| `llm_free_policy` | LLM 直接从状态/记忆中选择 action | 对照实验，观察 LLM 自发行为 |
-| `hybrid_policy` | LLM 给 action tendency modifier，不直接决定 action | 在可控性和开放性之间折中 |
-
-推荐下一步不是直接替换当前机制，而是新增对照实验：
+旧版：
 
 ```text
-same seed / same world / same memory
-  latent_field_policy vs llm_free_policy vs hybrid_policy
+field samples action -> LLM explains
 ```
 
-这样才能判断：
+新版：
 
 ```text
-哪些冲突来自连续社会动力学？
-哪些冲突来自 LLM 的叙事偏好？
-哪些冲突对 motive weights 敏感？
+field proposes candidates -> LLM scores -> fused sampler selects -> LLM explains
 ```
+
+关键提升是：LLM 不再只是“包装动作”，它会影响候选动作概率；但它仍不能绕过 action space、状态审计和因果可复现性。
 
 ---
 
@@ -270,7 +246,7 @@ same seed / same world / same memory
 LabWars 当前最强的地方不是“LLM 自己演出了内斗”，而是：
 
 ```text
-它把科研内斗拆成可观测、可干预、可消融的社会动力学变量。
+它把科研内斗拆成可观测、可评分、可干预、可消融、可反事实比较的社会动力学变量。
 ```
 
-这比单纯让 LLM 写剧情更适合做研究平台。
+这比单纯让 LLM 写剧情更适合做研究平台，也比纯手写权重更接近主观社会行为仿真。
