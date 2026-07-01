@@ -298,3 +298,73 @@ llm_override_pressure
 ```
 
 这个实验回答的问题是：LLM candidate scoring 是否真的改变长程社会轨迹，而不只是给 field prior 做解释包装。
+## 11. 双引擎 LabWars：结构驱动 vs 语言驱动
+
+LabWars 现在可以明确表述为双引擎架构：
+
+| 引擎 | 名称 | 作用 |
+|---|---|---|
+| Engine A | Social Physics Engine | 负责记忆共振、关系图、资源压力、署名账本、event field、action candidates |
+| Engine B | LLM Cognitive Policy Layer | 负责候选动作主观合理性评分、公开/私下立场、主观记忆解释 |
+
+核心实验参数是：
+
+```text
+λ = cognitive_policy_lambda ∈ [0, 1]
+```
+
+语义：
+
+| λ | 模式 | 含义 |
+|---:|---|---|
+| 0.0 | physics only | 只使用 Social Physics Engine 的候选动作排序 |
+| 0.2 | weak LLM | LLM 轻微影响候选排序 |
+| 0.35 | hybrid default | 当前默认双引擎平衡点 |
+| 0.6 | LLM-heavy | LLM 主观评分明显改变行为分布 |
+| 1.0 | LLM dominated | 候选空间仍由 physics 给出，但排序由 LLM Cognitive Policy Layer 主导 |
+
+当前融合公式：
+
+```text
+social_physics_tendency = action field tendency
+llm_cognitive_tendency = 2 * (llm_score - 0.5)
+fused_tendency = (1 - λ) * social_physics_tendency + λ * llm_cognitive_tendency
+probability = softmax(fused_tendency)
+```
+
+这样 LabWars 可以回答一个更硬的问题：
+
+```text
+同一批 agent、记忆和事件压力下，学术内斗轨迹主要来自结构性社会压力，还是来自 LLM 对情境的语言认知解释？
+```
+
+对应实验接口：
+
+```python
+from src.engine.simulation import SimConfig
+from src.experiments.llm_mix_ablation import run_dual_engine_ablation
+
+result = run_dual_engine_ablation(
+    SimConfig(max_rounds=60, interventions=[]),
+    lambda_values=[0.0, 0.2, 0.35, 0.6, 1.0],
+    seeds=list(range(10)),
+)
+```
+
+它会比较：
+
+```text
+authorship_dispute_index
+trust_fragmentation
+public_private_divergence_mean
+memory_authorship_cluster_strength
+protest_authorship
+integrity_risk
+llm_override_pressure
+```
+
+这使 LabWars 的研究问题从“能不能模拟科研内斗”升级为：
+
+```text
+社会冲突中，结构压力和语言认知分别贡献了多少？
+```

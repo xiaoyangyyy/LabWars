@@ -53,6 +53,7 @@ class SimConfig:
     experiment_id: str | None = None
     condition_id: str | None = None
     enable_llm_action_scoring: bool = True
+    cognitive_policy_lambda: float | None = 0.35
     llm_action_score_mix: float = 0.35
 
     def to_dict(self) -> dict[str, Any]:
@@ -70,6 +71,7 @@ class SimConfig:
             "experiment_id": self.experiment_id,
             "condition_id": self.condition_id,
             "enable_llm_action_scoring": self.enable_llm_action_scoring,
+            "cognitive_policy_lambda": self.cognitive_policy_lambda,
             "llm_action_score_mix": self.llm_action_score_mix,
             "llm_provider": self.llm_provider or llm_cfg.get("provider"),
             "llm_model": self.llm_model or llm_cfg.get("model"),
@@ -154,6 +156,7 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
     sim_config_dict = {
         "seed": cfg.seed,
         "enable_llm_action_scoring": cfg.enable_llm_action_scoring,
+        "cognitive_policy_lambda": cfg.cognitive_policy_lambda,
         "llm_action_score_mix": cfg.llm_action_score_mix,
         "active_agents": cfg.active_agents,
         "offstage_agents": cfg.offstage_agents,

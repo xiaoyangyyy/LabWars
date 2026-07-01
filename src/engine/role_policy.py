@@ -138,7 +138,11 @@ class RolePolicyAgent:
         if not config.get("enable_llm_action_scoring", True):
             return candidate_payload, {"enabled": False, "source": "field_only"}
 
-        mix = float(config.get("llm_action_score_mix", 0.35))
+        raw_lambda = config.get("cognitive_policy_lambda")
+        if raw_lambda is None:
+            raw_lambda = config.get("llm_action_score_mix", 0.35)
+        cognitive_lambda = max(0.0, min(1.0, float(raw_lambda)))
+        social_lambda = 1.0 - cognitive_lambda
         try:
             prompt = build_action_scoring_prompt(agent, event, world, recall, candidate_payload)
             raw = self.llm.complete_json(ACTION_SCORING_SYSTEM, prompt)
@@ -161,12 +165,17 @@ class RolePolicyAgent:
             score_item = score_map.get(str(candidate.get("type", "")), {})
             llm_score = _coerce_score(score_item.get("plausibility", 0.5))
             field_tendency = float(candidate.get("tendency", 0.0))
-            fused_tendency = field_tendency + mix * (llm_score - 0.5)
+            llm_cognitive_tendency = (llm_score - 0.5) * 2.0
+            fused_tendency = social_lambda * field_tendency + cognitive_lambda * llm_cognitive_tendency
             item["field_probability"] = candidate.get("probability", 0.0)
+            item["social_physics_tendency"] = round(field_tendency, 4)
             item["llm_score"] = round(llm_score, 4)
+            item["llm_cognitive_tendency"] = round(llm_cognitive_tendency, 4)
             item["llm_score_reason"] = str(score_item.get("reason", ""))[:160]
             item["fused_tendency"] = round(fused_tendency, 4)
-            item["scoring_source"] = "field_llm_fused"
+            item["cognitive_policy_lambda"] = round(cognitive_lambda, 4)
+            item["social_physics_weight"] = round(social_lambda, 4)
+            item["scoring_source"] = "dual_engine_fused"
             fused.append(item)
 
         probs = _softmax([float(item["fused_tendency"]) for item in fused], temperature=0.22)
@@ -174,8 +183,9 @@ class RolePolicyAgent:
             item["probability"] = round(prob, 5)
         return fused, {
             "enabled": True,
-            "source": "field_llm_fused",
-            "mix": mix,
+            "source": "dual_engine_fused",
+            "cognitive_policy_lambda": cognitive_lambda,
+            "social_physics_weight": social_lambda,
             "raw": raw,
         }
 

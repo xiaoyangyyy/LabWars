@@ -1,4 +1,4 @@
-﻿"""Ablation over LLM candidate-scoring mix values."""
+﻿"""Dual-engine ablation over cognitive-policy lambda values."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from src.engine.run_log import RunLog, extract_outcome
 from src.engine.simulation import SimConfig, run_simulation
 from src.experiments.metrics import compute_run_metrics
 
-DEFAULT_MIX_VALUES = [0.0, 0.2, 0.35, 0.6, 1.0]
+DEFAULT_LAMBDA_VALUES = [0.0, 0.2, 0.35, 0.6, 1.0]
+DEFAULT_MIX_VALUES = DEFAULT_LAMBDA_VALUES
 DEFAULT_MIX_OUTCOMES = [
     "authorship_dispute_index",
     "trust_fragmentation",
@@ -22,23 +23,39 @@ DEFAULT_MIX_OUTCOMES = [
 
 
 @dataclass
-class LLMMixAblationResult:
-    mix_values: list[float]
+class DualEngineAblationResult:
+    lambda_values: list[float]
     outcomes: list[str]
-    n_per_mix: int
+    n_per_lambda: int
     summary: dict[str, dict[str, float]]
     per_seed: list[dict[str, Any]]
+    research_question: str = "Are trajectories driven more by Social Physics or by the LLM Cognitive Policy Layer?"
+
+    @property
+    def mix_values(self) -> list[float]:
+        return self.lambda_values
+
+    @property
+    def n_per_mix(self) -> int:
+        return self.n_per_lambda
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return asdict(self) | {
+            "mix_values": self.lambda_values,
+            "n_per_mix": self.n_per_lambda,
+        }
 
 
-def _clone_config(base: SimConfig, *, seed: int, mix: float) -> SimConfig:
+LLMMixAblationResult = DualEngineAblationResult
+
+
+def _clone_config(base: SimConfig, *, seed: int, cognitive_lambda: float) -> SimConfig:
     data = dict(base.__dict__)
     data.update({
         "seed": seed,
-        "enable_llm_action_scoring": mix > 0.0,
-        "llm_action_score_mix": mix,
+        "enable_llm_action_scoring": cognitive_lambda > 0.0,
+        "cognitive_policy_lambda": cognitive_lambda,
+        "llm_action_score_mix": cognitive_lambda,
     })
     return SimConfig(**data)
 
@@ -64,32 +81,32 @@ def _measure(log: RunLog, outcome: str, metrics: dict[str, Any]) -> float:
     return float(extract_outcome(log, outcome))
 
 
-def run_llm_mix_ablation(
+def run_dual_engine_ablation(
     base_config: SimConfig,
     *,
-    mix_values: list[float] | None = None,
+    lambda_values: list[float] | None = None,
     seeds: list[int] | None = None,
     n: int = 10,
     outcomes: list[str] | None = None,
-) -> LLMMixAblationResult:
-    """Compare long-horizon trajectories under different LLM scoring weights.
+) -> DualEngineAblationResult:
+    """Compare trajectories across Social Physics / LLM Cognitive blends.
 
-    mix=0.0 is treated as a field-only baseline by disabling candidate scoring.
-    Larger values keep the same structural action field but let LLM plausibility
-    scores exert more influence over fused action sampling.
+    lambda=0.0 is Social Physics only. lambda=1.0 lets the LLM Cognitive
+    Policy Layer dominate candidate ranking while the physics engine still
+    supplies candidate actions and state dynamics.
     """
-    mixes = mix_values if mix_values is not None else DEFAULT_MIX_VALUES
+    lambdas = lambda_values if lambda_values is not None else DEFAULT_LAMBDA_VALUES
     seed_values = seeds if seeds is not None else list(range(n))
     outcome_names = outcomes if outcomes is not None else DEFAULT_MIX_OUTCOMES
 
     rows: list[dict[str, Any]] = []
-    for mix in mixes:
+    for cognitive_lambda in lambdas:
         for seed in seed_values:
-            cfg = _clone_config(base_config, seed=seed, mix=float(mix))
+            cfg = _clone_config(base_config, seed=seed, cognitive_lambda=float(cognitive_lambda))
             log = run_simulation(cfg)
             metrics = compute_run_metrics(log)
             row = {
-                "mix": float(mix),
+                "lambda": float(cognitive_lambda),
                 "seed": seed,
                 "run_id": log.run_id,
                 **{name: _measure(log, name, metrics) for name in outcome_names},
@@ -97,18 +114,36 @@ def run_llm_mix_ablation(
             rows.append(row)
 
     summary: dict[str, dict[str, float]] = {}
-    for mix in mixes:
-        key = f"mix_{float(mix):.2f}"
-        mix_rows = [r for r in rows if float(r["mix"]) == float(mix)]
+    for cognitive_lambda in lambdas:
+        key = f"lambda_{float(cognitive_lambda):.2f}"
+        lambda_rows = [r for r in rows if float(r["lambda"]) == float(cognitive_lambda)]
         summary[key] = {}
         for outcome in outcome_names:
-            vals = [float(r.get(outcome, 0.0)) for r in mix_rows]
+            vals = [float(r.get(outcome, 0.0)) for r in lambda_rows]
             summary[key][outcome] = round(sum(vals) / len(vals), 6) if vals else 0.0
 
-    return LLMMixAblationResult(
-        mix_values=[float(m) for m in mixes],
+    return DualEngineAblationResult(
+        lambda_values=[float(value) for value in lambdas],
         outcomes=outcome_names,
-        n_per_mix=len(seed_values),
+        n_per_lambda=len(seed_values),
         summary=summary,
         per_seed=rows,
+    )
+
+
+def run_llm_mix_ablation(
+    base_config: SimConfig,
+    *,
+    mix_values: list[float] | None = None,
+    seeds: list[int] | None = None,
+    n: int = 10,
+    outcomes: list[str] | None = None,
+) -> DualEngineAblationResult:
+    """Backward-compatible wrapper for the dual-engine lambda ablation."""
+    return run_dual_engine_ablation(
+        base_config,
+        lambda_values=mix_values,
+        seeds=seeds,
+        n=n,
+        outcomes=outcomes,
     )

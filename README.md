@@ -115,4 +115,4 @@ python -m src.experiments aggregate -e A
 
 LabWars 当前不是让 LLM 自由生成真实行动。真实流程是：continuous latent action field 生成候选动作和结构先验；LLM 对每个候选动作评分；系统融合 `field_score` 与 `llm_score` 后采样 primary action；LLM 再在 selected action 约束下生成公开立场、私下意图和解释文本。
 
-可校准参数见 [`config/action_field.yaml`](config/action_field.yaml)。如需测试某组 motive weights 是否主导结果，可使用 `src.experiments.action_field_ablation.run_action_field_ablation` 做多 seed 消融；如需测试 LLM candidate scoring 是否改变长程轨迹，可使用 `src.experiments.llm_mix_ablation.run_llm_mix_ablation` 扫描 `llm_action_score_mix = 0.0 / 0.2 / 0.35 / 0.6 / 1.0`。报告第 11 节会展示 field top3、LLM top3、fused top3、selected action 与 LLM Override Pressure。
+可校准参数见 [`config/action_field.yaml`](config/action_field.yaml)。如需测试某组 motive weights 是否主导结果，可使用 `src.experiments.action_field_ablation.run_action_field_ablation` 做多 seed 消融；如需测试 LLM candidate scoring 是否改变长程轨迹，可使用 `src.experiments.llm_mix_ablation.run_dual_engine_ablation` 扫描双引擎参数 `λ = cognitive_policy_lambda = 0.0 / 0.2 / 0.35 / 0.6 / 1.0`。`λ=0` 表示 Social Physics only，`λ=1` 表示 LLM Cognitive Policy Layer 主导候选排序。报告第 11 节会展示 field top3、LLM top3、fused top3、selected action 与 LLM Override Pressure。
