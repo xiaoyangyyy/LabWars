@@ -74,6 +74,34 @@ def _format_causal_path(path: dict[str, Any]) -> str:
     lines.append(f"Counterfactual: {path.get('counterfactual_hint', '')}")
     return "\n".join(lines)
 
+
+def _format_rank_items(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return "none"
+    return ", ".join(f"{item.get('type')}={float(item.get('score', 0)):.3f}" for item in items)
+
+
+def _format_llm_scoring_influence(influence: dict[str, Any]) -> str:
+    if not influence or not influence.get("scored_action_count"):
+        return "_No LLM-scored action candidates recorded._"
+    lines = [
+        f"- Scored actions: {influence.get('scored_action_count', 0)}",
+        f"- Mean LLM Override Pressure: {float(influence.get('mean_override_pressure', 0)):.3f}",
+        f"- Max LLM Override Pressure: {float(influence.get('max_override_pressure', 0)):.3f}",
+        f"- Mean selected-action rank lift: {float(influence.get('mean_selected_rank_lift', 0)):.3f}",
+    ]
+    for item in influence.get("examples", [])[:5]:
+        ranks = item.get("selected_ranks", {})
+        lines.append(
+            f"- R{item.get('round')} {item.get('agent')} selected `{item.get('selected_action')}` "
+            f"ranks(field={ranks.get('field')}, llm={ranks.get('llm')}, fused={ranks.get('fused')}), "
+            f"pressure={float(item.get('override_pressure', 0)):.3f}"
+        )
+        lines.append(f"  field top3: {_format_rank_items(item.get('field_top3', []))}")
+        lines.append(f"  llm top3: {_format_rank_items(item.get('llm_top3', []))}")
+        lines.append(f"  fused top3: {_format_rank_items(item.get('fused_top3', []))}")
+    return "\n".join(lines)
+
 def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None) -> str:
     metrics = metrics or compute_run_metrics(log)
     outcomes = metrics["outcomes"]
@@ -130,6 +158,7 @@ def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None)
         "{{failure_section}}": failure,
         "{{probe_section}}": probe_text,
         "{{causal_path_section}}": _format_causal_path(metrics.get("path_level_causal_chain", {})),
+        "{{llm_scoring_section}}": _format_llm_scoring_influence(metrics.get("llm_scoring_influence", {})),
     }
     text = template
     for k, v in replacements.items():

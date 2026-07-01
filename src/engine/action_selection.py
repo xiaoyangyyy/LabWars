@@ -380,7 +380,12 @@ def generate_action_candidates(
     return kept
 
 
-def sample_action_candidate(candidates: list[ActionCandidate], *, seed: int, round_num: int, agent_id: str) -> ActionCandidate:
+def sample_action_candidate_legacy(candidates: list[ActionCandidate], *, seed: int, round_num: int, agent_id: str) -> ActionCandidate:
+    """Deprecated field-only sampler kept for historical ablation tests.
+
+    The current RolePolicyAgent path uses LLM candidate scoring plus fused
+    sampling, so this function must not be imported by the production policy.
+    """
     if not candidates:
         raise ValueError("No action candidates to sample")
     rng = _stable_rng(seed + 7919, round_num, agent_id)
@@ -391,8 +396,3 @@ def sample_action_candidate(candidates: list[ActionCandidate], *, seed: int, rou
         if needle <= total:
             return candidate
     return candidates[-1]
-
-
-
-
-

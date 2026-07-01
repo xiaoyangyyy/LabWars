@@ -58,10 +58,10 @@ class TestMetricsAndReport:
         assert "timeline" in metrics
         assert "trust_fragmentation_curve" in metrics
 
-    def test_report_has_ten_sections(self, tmp_path):
+    def test_report_has_eleven_sections(self, tmp_path):
         result = run_single("A", seed=5, condition_id="A1", max_rounds=10)
         text = generate_report_from_log(result["log"])
-        for i in range(1, 11):
+        for i in range(1, 12):
             assert f"## {i}." in text
         path = generate_report(
             experiment_id="A",
@@ -70,6 +70,7 @@ class TestMetricsAndReport:
             output_dir=tmp_path,
             log=result["log"],
         )
+        assert "LLM Scoring Influence" in text
         assert path.exists()
 
 

@@ -35,12 +35,100 @@ def compute_run_metrics(log: RunLog) -> dict[str, Any]:
         "intervention_count": len(log.interventions_applied),
         "round_count": len(log.round_records),
         "behavioral_trace_metrics": _behavioral_trace_metrics(log),
+        "llm_scoring_influence": _llm_scoring_influence(log),
         "critic_audit_metrics": _critic_audit_metrics(log),
         "power_surface_final": _power_surface_from_log(log),
         "path_level_causal_chain": _path_level_causal_chain(log),
     }
 
 
+
+
+def _ranking(items: list[dict[str, Any]], key: str, reverse: bool = True) -> list[str]:
+    ranked = sorted(items, key=lambda item: float(item.get(key, 0.0)), reverse=reverse)
+    return [str(item.get("type", "unknown")) for item in ranked]
+
+
+def _top_rank_items(items: list[dict[str, Any]], key: str, n: int = 3) -> list[dict[str, Any]]:
+    ranked = sorted(items, key=lambda item: float(item.get(key, 0.0)), reverse=True)[:n]
+    return [{"type": str(item.get("type", "unknown")), "score": round(float(item.get(key, 0.0)), 4)} for item in ranked]
+
+
+def _rank_of(action_type: str, ranking: list[str]) -> int:
+    try:
+        return ranking.index(action_type) + 1
+    except ValueError:
+        return len(ranking) + 1
+
+
+def _kendall_rank_shift(a: list[str], b: list[str]) -> float:
+    common = [x for x in a if x in set(b)]
+    if len(common) < 2:
+        return 0.0
+    pos_a = {x: i for i, x in enumerate(a)}
+    pos_b = {x: i for i, x in enumerate(b)}
+    inversions = 0
+    total = 0
+    for i, left in enumerate(common):
+        for right in common[i + 1:]:
+            total += 1
+            if (pos_a[left] - pos_a[right]) * (pos_b[left] - pos_b[right]) < 0:
+                inversions += 1
+    return inversions / total if total else 0.0
+
+
+def _llm_scoring_influence(log: RunLog, limit: int = 8) -> dict[str, Any]:
+    """Summarize how much LLM candidate scoring changed action rankings."""
+    examples: list[dict[str, Any]] = []
+    pressures: list[float] = []
+    selected_rank_shifts: list[float] = []
+
+    for action in log.actions:
+        candidates = action.get("action_candidates") or []
+        selected = action.get("selected_action") or {}
+        audit = action.get("llm_action_scoring") or {}
+        if not candidates or audit.get("source") != "field_llm_fused":
+            continue
+        if not all("llm_score" in c for c in candidates):
+            continue
+
+        field_rank = _ranking(candidates, "tendency")
+        llm_rank = _ranking(candidates, "llm_score")
+        fused_rank = _ranking(candidates, "fused_tendency")
+        selected_type = str(selected.get("type") or action.get("type") or "unknown")
+        field_selected_rank = _rank_of(selected_type, field_rank)
+        fused_selected_rank = _rank_of(selected_type, fused_rank)
+        llm_selected_rank = _rank_of(selected_type, llm_rank)
+        pressure = _kendall_rank_shift(field_rank, fused_rank)
+        selected_shift = max(0, field_selected_rank - fused_selected_rank)
+        pressures.append(pressure)
+        selected_rank_shifts.append(float(selected_shift))
+
+        if pressure > 0 or selected_shift > 0 or len(examples) < 2:
+            examples.append({
+                "round": action.get("round"),
+                "agent": action.get("agent"),
+                "selected_action": selected_type,
+                "field_top3": _top_rank_items(candidates, "tendency"),
+                "llm_top3": _top_rank_items(candidates, "llm_score"),
+                "fused_top3": _top_rank_items(candidates, "fused_tendency"),
+                "selected_ranks": {
+                    "field": field_selected_rank,
+                    "llm": llm_selected_rank,
+                    "fused": fused_selected_rank,
+                },
+                "override_pressure": round(pressure, 4),
+                "selected_rank_lift": selected_shift,
+            })
+
+    examples.sort(key=lambda item: (float(item.get("override_pressure", 0.0)), float(item.get("selected_rank_lift", 0.0))), reverse=True)
+    return {
+        "mean_override_pressure": round(sum(pressures) / len(pressures), 4) if pressures else 0.0,
+        "max_override_pressure": round(max(pressures), 4) if pressures else 0.0,
+        "mean_selected_rank_lift": round(sum(selected_rank_shifts) / len(selected_rank_shifts), 4) if selected_rank_shifts else 0.0,
+        "scored_action_count": len(pressures),
+        "examples": examples[:limit],
+    }
 
 def _path_level_causal_chain(log: RunLog, agent_id: str = "phd_a") -> dict[str, Any]:
     """Extract a readable long-horizon causal path from events, memory writes, and actions.

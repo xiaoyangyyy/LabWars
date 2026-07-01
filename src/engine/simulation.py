@@ -237,6 +237,7 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
             **cog.metrics,
             "career_hostage_index": career_hostage_index(world),
             "pi_control_pressure_phd_a": pi_control_pressure(world, world.agents.get("phd_a")),
+            "integrity_risk": world.project.project.integrity_risk,
             **_relationship_snapshot(world),
         }
         log.record_round(round_num, event.event_id, metrics, cog.agent_deltas, intervention_id)

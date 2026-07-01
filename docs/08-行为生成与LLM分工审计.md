@@ -250,3 +250,51 @@ LabWars 当前最强的地方不是“LLM 自己演出了内斗”，而是：
 ```
 
 这比单纯让 LLM 写剧情更适合做研究平台，也比纯手写权重更接近主观社会行为仿真。
+## 10. 防误读补强：legacy sampler、rank shift、mix ablation
+
+为避免评估者误以为主流程仍是 field-only sampling，`sample_action_candidate` 已从当前 API 中移除，历史函数改名为：
+
+```text
+sample_action_candidate_legacy
+```
+
+并新增测试保证 `RolePolicyAgent` 不 import、不调用 legacy sampler。当前主流程只使用：
+
+```text
+generate_action_candidates -> LLM candidate scoring -> fused sampler
+```
+
+报告现在会输出 LLM scoring 的可视化审计：
+
+| 字段 | 含义 |
+|---|---|
+| `field_top3` | structural field prior 排名前三 |
+| `llm_top3` | LLM plausibility score 排名前三 |
+| `fused_top3` | 融合后 tendency 排名前三 |
+| `selected_action` | 最终采样动作 |
+| `LLM Override Pressure` | field ranking 到 fused ranking 的 rank-shift 压力 |
+| `selected_rank_lift` | selected action 在 fused ranking 中相对 field ranking 提升了多少位 |
+
+还新增 `run_llm_mix_ablation` 专门扫描：
+
+```text
+mix = 0.0  # field only
+mix = 0.2
+mix = 0.35
+mix = 0.6
+mix = 1.0  # LLM-heavy
+```
+
+默认比较：
+
+```text
+authorship_dispute_index
+trust_fragmentation
+public_private_divergence_mean
+memory_authorship_cluster_strength
+protest_authorship
+integrity_risk
+llm_override_pressure
+```
+
+这个实验回答的问题是：LLM candidate scoring 是否真的改变长程社会轨迹，而不只是给 field prior 做解释包装。

@@ -1,8 +1,8 @@
-"""Tests for continuous action candidate generation."""
+﻿"""Tests for continuous action candidate generation."""
 
 from __future__ import annotations
 
-from src.engine.action_selection import generate_action_candidates, sample_action_candidate
+from src.engine.action_selection import generate_action_candidates, sample_action_candidate_legacy
 from src.engine.event_agent import EventAgent
 from src.world.actions import get_allowed_actions
 from src.world.loader import load_world
@@ -37,14 +37,14 @@ def test_authorship_pressure_lifts_authorship_actions():
     assert top_types & {"ask_for_authorship", "challenge_claim", "confront", "document_contribution"}
 
 
-def test_sampling_is_seed_stable():
+def test_legacy_sampling_is_seed_stable():
     world = load_world()
     agent = world.agents["phd_a"]
     event = EventAgent().generate(40, world)
     allowed = [a.value for a in get_allowed_actions(agent.id)]
     candidates = generate_action_candidates(agent, event, world, None, allowed, seed=3)
 
-    a = sample_action_candidate(candidates, seed=3, round_num=40, agent_id="phd_a")
-    b = sample_action_candidate(candidates, seed=3, round_num=40, agent_id="phd_a")
+    a = sample_action_candidate_legacy(candidates, seed=3, round_num=40, agent_id="phd_a")
+    b = sample_action_candidate_legacy(candidates, seed=3, round_num=40, agent_id="phd_a")
 
     assert a.type == b.type

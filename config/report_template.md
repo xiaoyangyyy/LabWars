@@ -41,3 +41,7 @@
 ## 10. Path-Level Causal Chain
 
 {{causal_path_section}}
+
+## 11. LLM Scoring Influence
+
+{{llm_scoring_section}}
