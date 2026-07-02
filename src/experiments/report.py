@@ -63,6 +63,12 @@ def _format_causal_path(path: dict[str, Any]) -> str:
             f"- R{node.get('round')} -> {node.get('kind')}:{node.get('label')} "
             f"[{node.get('event_id') or 'action'}]{suffix} - {node.get('detail', '')}"
         )
+    phases = path.get("trajectory_phases", {})
+    if phases.get("phases"):
+        lines.append("Trajectory phases:")
+        for phase in phases.get("phases", []):
+            lines.append(f"- {phase.get('name')} | {phase.get('round_range')} | {phase.get('signal')}")
+        lines.append(f"Phase transition peak: R{phases.get('phase_transition_round')} pressure={float(phases.get('phase_pressure_peak', 0)):.3f}")
     outcome = path.get("outcome_summary", {})
     lines.append(
         "Outcome: "
@@ -100,6 +106,51 @@ def _format_llm_scoring_influence(influence: dict[str, Any]) -> str:
         lines.append(f"  field top3: {_format_rank_items(item.get('field_top3', []))}")
         lines.append(f"  llm top3: {_format_rank_items(item.get('llm_top3', []))}")
         lines.append(f"  fused top3: {_format_rank_items(item.get('fused_top3', []))}")
+    return "\n".join(lines)
+
+
+def _format_force_items(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return "none"
+    return ", ".join(f"{item.get('force')}={float(item.get('contribution', 0)):+.3f}" for item in items)
+
+
+def _format_action_field_explanations(explanations: list[dict[str, Any]]) -> str:
+    if not explanations:
+        return "_No action-field decompositions recorded._"
+    lines = []
+    for item in explanations[:8]:
+        mem = item.get("memory_trigger") or {}
+        mem_text = mem.get("content_type") or "none"
+        if mem.get("memory_id"):
+            mem_text = f"{mem.get('content_type')}:{mem.get('memory_id')} attention={float(mem.get('attention', 0)):.3f}"
+        lines.append(
+            f"- R{item.get('round')} {item.get('agent')} `{item.get('action')}` -> {item.get('target')} "
+            f"field={float(item.get('field_tendency', 0)):.3f}, fused={float(item.get('fused_tendency', 0)):.3f}, p={float(item.get('probability', 0)):.3f}"
+        )
+        lines.append(f"  positive: {_format_force_items(item.get('positive_forces', []))}")
+        lines.append(f"  negative: {_format_force_items(item.get('negative_forces', []))}")
+        lines.append(f"  memory_trigger: {mem_text}")
+    return "\n".join(lines)
+
+
+def _format_llm_footprint(footprint: dict[str, Any]) -> str:
+    if not footprint or not footprint.get("scored_action_count"):
+        return "_No LLM influence footprint recorded._"
+    lines = [
+        f"- Scored actions: {footprint.get('scored_action_count', 0)}",
+        f"- Mean field->LLM pressure: {float(footprint.get('mean_field_to_llm_pressure', 0)):.3f}",
+        f"- Max field->LLM pressure: {float(footprint.get('max_field_to_llm_pressure', 0)):.3f}",
+        f"- Mean selected LLM rank lift: {float(footprint.get('mean_selected_llm_rank_lift', 0)):.3f}",
+    ]
+    for item in footprint.get("examples", [])[:5]:
+        lines.append(
+            f"- R{item.get('round')} {item.get('agent')} `{item.get('selected_action')}` "
+            f"field_rank={item.get('field_rank')} llm_rank={item.get('llm_rank')} fused_rank={item.get('fused_rank')} "
+            f"pressure={float(item.get('field_to_llm_pressure', 0)):.3f}; private_strategy={item.get('private_strategy')}"
+        )
+        lines.append(f"  field top3: {_format_rank_items(item.get('field_top3', []))}")
+        lines.append(f"  llm top3: {_format_rank_items(item.get('llm_top3', []))}")
     return "\n".join(lines)
 
 def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None) -> str:
@@ -159,6 +210,8 @@ def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None)
         "{{probe_section}}": probe_text,
         "{{causal_path_section}}": _format_causal_path(metrics.get("path_level_causal_chain", {})),
         "{{llm_scoring_section}}": _format_llm_scoring_influence(metrics.get("llm_scoring_influence", {})),
+        "{{action_field_explanation_section}}": _format_action_field_explanations(metrics.get("action_field_explanations", [])),
+        "{{llm_footprint_section}}": _format_llm_footprint(metrics.get("llm_influence_footprint", {})),
     }
     text = template
     for k, v in replacements.items():

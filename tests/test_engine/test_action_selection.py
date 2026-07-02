@@ -19,6 +19,8 @@ def test_candidates_have_probabilities_and_motives():
     assert candidates
     assert abs(sum(c.probability for c in candidates) - 1.0) < 1e-6
     assert all(c.motives for c in candidates)
+    assert all(c.field_decomposition for c in candidates)
+    assert all("motive_contributions" in c.field_decomposition for c in candidates)
     assert all(0.0 <= c.intensity <= 1.0 for c in candidates)
 
 

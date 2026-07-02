@@ -35,7 +35,9 @@ def compute_run_metrics(log: RunLog) -> dict[str, Any]:
         "intervention_count": len(log.interventions_applied),
         "round_count": len(log.round_records),
         "behavioral_trace_metrics": _behavioral_trace_metrics(log),
+        "action_field_explanations": _action_field_explanations(log),
         "llm_scoring_influence": _llm_scoring_influence(log),
+        "llm_influence_footprint": _llm_influence_footprint(log),
         "critic_audit_metrics": _critic_audit_metrics(log),
         "power_surface_final": _power_surface_from_log(log),
         "path_level_causal_chain": _path_level_causal_chain(log),
@@ -43,6 +45,49 @@ def compute_run_metrics(log: RunLog) -> dict[str, Any]:
 
 
 
+
+
+def _field_force_items(decomp: dict[str, Any], n: int = 5) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    values: dict[str, float] = {}
+    values["baseline"] = float(decomp.get("baseline", 0.0))
+    for name, value in (decomp.get("motive_contributions") or {}).items():
+        values[str(name)] = float(value)
+    for name in ("event_affinity", "repetition_penalty", "avoidance_penalty", "timing_adjustment", "emotional_bonus", "noise", "floor_adjustment"):
+        values[name] = float(decomp.get(name, 0.0))
+    positives = sorted(
+        ({"force": k, "contribution": round(v, 4)} for k, v in values.items() if v > 0),
+        key=lambda item: item["contribution"],
+        reverse=True,
+    )[:n]
+    negatives = sorted(
+        ({"force": k, "contribution": round(v, 4)} for k, v in values.items() if v < 0),
+        key=lambda item: item["contribution"],
+    )[:n]
+    return positives, negatives
+
+
+def _action_field_explanations(log: RunLog, limit: int = 8) -> list[dict[str, Any]]:
+    explanations: list[dict[str, Any]] = []
+    for action in log.actions:
+        selected = action.get("selected_action") or {}
+        decomp = selected.get("field_decomposition") or {}
+        if not decomp:
+            continue
+        positives, negatives = _field_force_items(decomp)
+        explanations.append({
+            "round": action.get("round"),
+            "agent": action.get("agent"),
+            "action": selected.get("type") or action.get("type"),
+            "target": selected.get("target") or action.get("target"),
+            "field_tendency": selected.get("social_physics_tendency", selected.get("tendency", 0.0)),
+            "fused_tendency": selected.get("fused_tendency", selected.get("tendency", 0.0)),
+            "probability": selected.get("probability", 0.0),
+            "positive_forces": positives,
+            "negative_forces": negatives,
+            "memory_trigger": decomp.get("memory_trigger") or {},
+        })
+    explanations.sort(key=lambda item: (int(item.get("round") or 0), str(item.get("agent") or "")))
+    return explanations[:limit]
 
 def _ranking(items: list[dict[str, Any]], key: str, reverse: bool = True) -> list[str]:
     ranked = sorted(items, key=lambda item: float(item.get(key, 0.0)), reverse=reverse)
@@ -130,6 +175,111 @@ def _llm_scoring_influence(log: RunLog, limit: int = 8) -> dict[str, Any]:
         "examples": examples[:limit],
     }
 
+
+def _llm_influence_footprint(log: RunLog, limit: int = 8) -> dict[str, Any]:
+    """Measure field-vs-LLM perceived-intention shift before final fusion."""
+    field_to_llm: list[float] = []
+    selected_lifts: list[float] = []
+    examples: list[dict[str, Any]] = []
+    for action in log.actions:
+        candidates = action.get("action_candidates") or []
+        selected = action.get("selected_action") or {}
+        audit = action.get("llm_action_scoring") or {}
+        if not candidates or audit.get("source") not in {"field_llm_fused", "dual_engine_fused"}:
+            continue
+        if not all("llm_score" in c for c in candidates):
+            continue
+        field_rank = _ranking(candidates, "tendency")
+        llm_rank = _ranking(candidates, "llm_score")
+        fused_rank = _ranking(candidates, "fused_tendency")
+        selected_type = str(selected.get("type") or action.get("type") or "unknown")
+        field_rank_selected = _rank_of(selected_type, field_rank)
+        llm_rank_selected = _rank_of(selected_type, llm_rank)
+        pressure = _kendall_rank_shift(field_rank, llm_rank)
+        lift = max(0, field_rank_selected - llm_rank_selected)
+        field_to_llm.append(pressure)
+        selected_lifts.append(float(lift))
+        private = action.get("private_intent") or {}
+        public = action.get("public_position") or {}
+        examples.append({
+            "round": action.get("round"),
+            "agent": action.get("agent"),
+            "selected_action": selected_type,
+            "field_rank": field_rank_selected,
+            "llm_rank": llm_rank_selected,
+            "fused_rank": _rank_of(selected_type, fused_rank),
+            "field_to_llm_pressure": round(pressure, 4),
+            "selected_llm_rank_lift": lift,
+            "private_strategy": private.get("strategy"),
+            "public_statement_type": public.get("statement_type"),
+            "field_top3": _top_rank_items(candidates, "tendency"),
+            "llm_top3": _top_rank_items(candidates, "llm_score"),
+        })
+    examples.sort(key=lambda item: (float(item.get("field_to_llm_pressure", 0.0)), float(item.get("selected_llm_rank_lift", 0.0))), reverse=True)
+    return {
+        "mean_field_to_llm_pressure": round(sum(field_to_llm) / len(field_to_llm), 4) if field_to_llm else 0.0,
+        "max_field_to_llm_pressure": round(max(field_to_llm), 4) if field_to_llm else 0.0,
+        "mean_selected_llm_rank_lift": round(sum(selected_lifts) / len(selected_lifts), 4) if selected_lifts else 0.0,
+        "scored_action_count": len(field_to_llm),
+        "examples": examples[:limit],
+    }
+
+
+def _behavioral_drift_curve(log: RunLog, agent_id: str = "phd_a") -> list[dict[str, float]]:
+    protest = {"ask_for_authorship", "privately_lobby_pi", "confront", "challenge_claim", "withdraw", "rebel", "document_contribution"}
+    curve: list[dict[str, float]] = []
+    for rec in log.round_records:
+        rnd = int(rec.get("round", 0))
+        recent = [a for a in log.actions if a.get("agent") == agent_id and max(1, rnd - 4) <= int(a.get("round", 0)) <= rnd]
+        pressure = 0.0
+        if recent:
+            pressure = sum(float(a.get("intensity", 0.0)) for a in recent if a.get("type") in protest) / max(len(recent), 1)
+        metrics = rec.get("metrics", {})
+        mem = rec.get("agent_deltas", {}).get(agent_id, {}).get("memory_written") or {}
+        memory_signal = 0.0
+        if mem.get("content_type") in {"authorship_signal", "promise_broken", "promise_fulfilled", "betrayal_signal"}:
+            memory_signal = abs(float(mem.get("valence", 0.0))) * float(mem.get("strength", 0.0))
+        curve.append({
+            "round": rnd,
+            "memory_cluster_increment": round(memory_signal, 4),
+            "behavioral_drift": round(pressure, 4),
+            "authorship_dispute_index": round(float(metrics.get("authorship_dispute_index", 0.0)), 4),
+            "trust_fragmentation": round(float(metrics.get("trust_fragmentation", 0.0)), 4),
+        })
+    return curve
+
+
+def _phase_transition_summary(log: RunLog) -> dict[str, Any]:
+    curve = _behavioral_drift_curve(log)
+    if not curve:
+        return {"phase_transition_round": None, "phases": []}
+    combined = [
+        {
+            **point,
+            "phase_pressure": round(
+                0.35 * point["authorship_dispute_index"]
+                + 0.25 * point["trust_fragmentation"]
+                + 0.25 * point["behavioral_drift"]
+                + 0.15 * point["memory_cluster_increment"],
+                4,
+            ),
+        }
+        for point in curve
+    ]
+    peak = max(combined, key=lambda point: point["phase_pressure"])
+    phases = [
+        {"name": "event_chain", "round_range": "R1-R20", "signal": "early authorship and credit events create latent pressure"},
+        {"name": "memory_cluster_formation", "round_range": "R20-R40", "signal": "authorship/promise memories accumulate and become recallable"},
+        {"name": "behavioral_drift", "round_range": "R40-R51", "signal": "documentation, lobbying, delay, and confrontational candidates gain mass"},
+        {"name": "phase_transition", "round_range": f"R{peak['round']}", "signal": "combined memory, trust, authorship dispute, and action pressure peaks"},
+    ]
+    return {
+        "phase_transition_round": peak["round"],
+        "phase_pressure_peak": peak["phase_pressure"],
+        "curve_sample": combined[:: max(1, len(combined) // 8)],
+        "phases": phases,
+    }
+
 def _path_level_causal_chain(log: RunLog, agent_id: str = "phd_a") -> dict[str, Any]:
     """Extract a readable long-horizon causal path from events, memory writes, and actions.
 
@@ -213,6 +363,7 @@ def _path_level_causal_chain(log: RunLog, agent_id: str = "phd_a") -> dict[str, 
     return {
         "agent": agent_id,
         "nodes": compact[:18],
+        "trajectory_phases": _phase_transition_summary(log),
         "finding": (
             "Final authorship escalation is summarized as a mediated path through authorship memory, "
             "trust erosion, and late-stage authorship pressure rather than a single draft event."

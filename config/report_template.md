@@ -45,3 +45,11 @@
 ## 11. LLM Scoring Influence
 
 {{llm_scoring_section}}
+
+## 12. Action Field Explanation
+
+{{action_field_explanation_section}}
+
+## 13. LLM Influence Footprint
+
+{{llm_footprint_section}}

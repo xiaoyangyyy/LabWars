@@ -368,3 +368,79 @@ llm_override_pressure
 ```text
 社会冲突中，结构压力和语言认知分别贡献了多少？
 ```
+## 12. 9.5 分补强：解释力、语言足迹、相变链
+
+当前新增三类审计对象，让行为不只是“被采样出来”，而是可以反编译来源。
+
+### 12.1 Action Field 可解释性
+
+每个 `ActionCandidate` 现在记录 `field_decomposition`：
+
+```json
+{
+  "baseline": 0.10,
+  "motive_contributions": {
+    "resentment_drive": 0.21,
+    "credit_capture": 0.18,
+    "caution": -0.09
+  },
+  "event_affinity": 0.08,
+  "repetition_penalty": -0.045,
+  "memory_trigger": {
+    "content_type": "promise_broken",
+    "attention": 0.42
+  },
+  "raw_tendency": 0.48,
+  "final_tendency": 0.48
+}
+```
+
+报告第 12 节会输出 selected action 的正向力、负向力和触发记忆，用来回答：
+
+```text
+为什么这个 action 从社会物理场里冒出来？
+```
+
+### 12.2 LLM Influence Footprint
+
+除了 `field -> fused` 的 LLM Override Pressure，现在还记录：
+
+```text
+field ranking -> LLM perceived ranking
+```
+
+也就是 LLM 在“主观意图判断”层面到底把哪些 action 提前了、压低了。报告第 13 节输出：
+
+```text
+field_rank
+llm_rank
+fused_rank
+field_to_llm_pressure
+selected_llm_rank_lift
+private_strategy
+```
+
+这回答：
+
+```text
+LLM 到底改写了多少行为解释和候选排序？
+```
+
+### 12.3 轨迹级因果链：从节点到相变
+
+Path-level causal chain 现在不只是：
+
+```text
+event -> memory -> action -> outcome
+```
+
+而是显式组织成：
+
+```text
+event chain
+-> memory cluster formation
+-> behavioral drift
+-> phase transition
+```
+
+`phase_transition_round` 由 memory increment、behavioral drift、authorship dispute、trust fragmentation 的连续压力峰值给出。它不是触发规则，只是事后反编译指标，用来解释“冲突什么时候从潜伏变成显性”。

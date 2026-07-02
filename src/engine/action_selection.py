@@ -31,6 +31,7 @@ class ActionCandidate:
     probability: float = 0.0
     intensity: float = 0.5
     motives: dict[str, float] = field(default_factory=dict)
+    field_decomposition: dict[str, Any] = field(default_factory=dict)
     parameter_source: str = "code_default"
 
     def to_dict(self) -> dict[str, Any]:
@@ -41,6 +42,8 @@ class ActionCandidate:
             "probability": round(self.probability, 5),
             "intensity": round(self.intensity, 4),
             "motives": {k: round(v, 4) for k, v in self.motives.items()},
+            "field_decomposition": self.field_decomposition,
+            "parameter_source": self.parameter_source,
         }
 
 
@@ -325,6 +328,25 @@ def get_action_field_config() -> dict[str, Any]:
     base["source"] = "runtime_override"
     return base
 
+
+def _memory_trigger(agent: Agent, recall: RecallResult | None) -> dict[str, Any]:
+    if not recall or not recall.attention_weights:
+        return {"memory_id": None, "content_type": None, "attention": 0.0, "interpretation": ""}
+    mem_id, attention = max(recall.attention_weights.items(), key=lambda item: item[1])
+    mem = next((m for m in agent.memory if m.get("memory_id") == mem_id), {})
+    return {
+        "memory_id": mem_id,
+        "content_type": mem.get("content_type"),
+        "attention": round(float(attention), 4),
+        "strength": round(float(mem.get("strength", 0.0)), 4),
+        "valence": round(float(mem.get("valence", 0.0)), 4),
+        "interpretation": str(mem.get("interpretation", ""))[:160],
+    }
+
+
+def _round_contribs(values: dict[str, float]) -> dict[str, float]:
+    return {k: round(float(v), 4) for k, v in values.items()}
+
 def generate_action_candidates(
     agent: Agent,
     event: EventAtom,
@@ -349,26 +371,63 @@ def generate_action_candidates(
         target = _target_for_action(action, agent, world, event)
         motives = _base_motives(agent, world, event, target, recall)
         weights = motive_weights.get(action, {})
-        tendency = float(params["baseline_tendency"])
-        tendency += sum(motives.get(name, 0.0) * weight for name, weight in weights.items())
-        tendency += event_affinity.get(event.type, {}).get(action, 0.0)
-        tendency -= float(params["repetition_penalty"]) * recent_counts.get(action, 0)
-        if action in avoid:
-            tendency -= float(params["avoided_action_penalty"])
+        baseline = float(params["baseline_tendency"])
+        motive_contribs = {
+            name: motives.get(name, 0.0) * weight
+            for name, weight in weights.items()
+        }
+        event_bonus = float(event_affinity.get(event.type, {}).get(action, 0.0))
+        repetition_penalty = -float(params["repetition_penalty"]) * recent_counts.get(action, 0)
+        avoided_penalty = -float(params["avoided_action_penalty"]) if action in avoid else 0.0
+        timing_adjustment = 0.0
         if action == "talk_to_alumni":
             time_open = _sigmoid((event.round / 60.0) - 0.35, scale=8.0)
-            tendency -= float(params["talk_to_alumni_time_penalty"]) * (1.0 - time_open)
+            timing_adjustment = -float(params["talk_to_alumni_time_penalty"]) * (1.0 - time_open)
+        emotional_bonus = 0.0
         if ACTION_CATEGORIES.get(ActionType(action)) == "emotional":
-            tendency += float(params["emotional_action_bonus"]) * motives["resentment_drive"]
+            emotional_bonus = float(params["emotional_action_bonus"]) * motives["resentment_drive"]
         noise = float(params["noise_amplitude"])
-        tendency += rng.uniform(-noise, noise)
-        tendency = max(float(params["min_tendency"]), tendency)
+        noise_contrib = rng.uniform(-noise, noise)
+        raw_tendency = (
+            baseline
+            + sum(motive_contribs.values())
+            + event_bonus
+            + repetition_penalty
+            + avoided_penalty
+            + timing_adjustment
+            + emotional_bonus
+            + noise_contrib
+        )
+        tendency = max(float(params["min_tendency"]), raw_tendency)
+        floor_adjustment = tendency - raw_tendency
         intensity = _clamp(
             float(params["intensity_base"])
             + float(params["intensity_scale"])
             * _sigmoid(tendency - float(params["intensity_center"]), scale=float(params["intensity_steepness"]))
         )
-        candidates.append(ActionCandidate(action, target, tendency, intensity=intensity, motives=motives, parameter_source=source))
+        field_decomposition = {
+            "baseline": round(baseline, 4),
+            "motive_contributions": _round_contribs(motive_contribs),
+            "event_affinity": round(event_bonus, 4),
+            "repetition_penalty": round(repetition_penalty, 4),
+            "avoidance_penalty": round(avoided_penalty, 4),
+            "timing_adjustment": round(timing_adjustment, 4),
+            "emotional_bonus": round(emotional_bonus, 4),
+            "noise": round(noise_contrib, 4),
+            "floor_adjustment": round(floor_adjustment, 4),
+            "memory_trigger": _memory_trigger(agent, recall),
+            "raw_tendency": round(raw_tendency, 4),
+            "final_tendency": round(tendency, 4),
+        }
+        candidates.append(ActionCandidate(
+            action,
+            target,
+            tendency,
+            intensity=intensity,
+            motives=motives,
+            field_decomposition=field_decomposition,
+            parameter_source=source,
+        ))
 
     candidates.sort(key=lambda c: c.tendency, reverse=True)
     kept = candidates[: max(1, min(top_n, len(candidates)))]

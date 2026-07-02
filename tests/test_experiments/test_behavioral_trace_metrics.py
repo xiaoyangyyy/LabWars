@@ -16,3 +16,5 @@ def test_behavioral_trace_metrics_present_and_bounded():
     assert trace["mean_candidate_count"] > 0.0
     assert 0.0 <= trace["state_generated_event_fraction"] <= 1.0
     assert trace["delayed_reaction_lag"] >= 0.0
+    assert metrics["action_field_explanations"]
+    assert "llm_influence_footprint" in metrics
