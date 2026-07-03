@@ -444,3 +444,47 @@ event chain
 ```
 
 `phase_transition_round` 由 memory increment、behavioral drift、authorship dispute、trust fragmentation 的连续压力峰值给出。它不是触发规则，只是事后反编译指标，用来解释“冲突什么时候从潜伏变成显性”。
+## 13. Policy Mode 三轨对照：冲 9.5 的诚实边界
+
+LabWars 不应对外宣称“完全无启发式”或“LLM 自由生成真实社会”。更稳的定位是：
+
+```text
+可校准的连续社会动力学先验
++ LLM 候选动作认知评分
++ 反事实消融审计
+```
+
+为了检验这个边界，当前新增三轨 `policy_mode`：
+
+| mode | action space 来源 | action ranking 来源 | 研究用途 |
+|---|---|---|---|
+| `social_physics` | Action Field | Social Physics only | 结构压力 baseline |
+| `dual_engine` | Action Field | Social Physics + LLM Cognitive scoring | 默认主线，可控可审计 |
+| `llm_native` | LLM 直接提出候选动作，再由系统映射/校验 | LLM-native plausibility | 对照 LLM 自由生成候选是否更戏剧化、更不稳定 |
+
+`llm_native` 不是默认主仿真，而是对照轨道。它回答：
+
+```text
+如果让 LLM 自己提出行动候选，轨迹是否更 prompt-sensitive？
+是否更戏剧化？
+是否比 dual_engine 更难反事实？
+```
+
+实验接口：
+
+```python
+from src.engine.simulation import SimConfig
+from src.experiments.policy_mode_comparison import run_policy_mode_comparison
+
+result = run_policy_mode_comparison(
+    SimConfig(max_rounds=60, interventions=[]),
+    policy_modes=["social_physics", "dual_engine", "llm_native"],
+    seeds=list(range(10)),
+)
+```
+
+这使项目的核心问题变成：
+
+```text
+社会冲突轨迹到底来自结构性压力、语言模型认知，还是两者混合？
+```

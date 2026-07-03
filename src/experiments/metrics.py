@@ -132,7 +132,7 @@ def _llm_scoring_influence(log: RunLog, limit: int = 8) -> dict[str, Any]:
         candidates = action.get("action_candidates") or []
         selected = action.get("selected_action") or {}
         audit = action.get("llm_action_scoring") or {}
-        if not candidates or audit.get("source") not in {"field_llm_fused", "dual_engine_fused"}:
+        if not candidates or audit.get("source") not in {"field_llm_fused", "dual_engine_fused", "llm_native_generated", "llm_native_fallback"}:
             continue
         if not all("llm_score" in c for c in candidates):
             continue
@@ -185,7 +185,7 @@ def _llm_influence_footprint(log: RunLog, limit: int = 8) -> dict[str, Any]:
         candidates = action.get("action_candidates") or []
         selected = action.get("selected_action") or {}
         audit = action.get("llm_action_scoring") or {}
-        if not candidates or audit.get("source") not in {"field_llm_fused", "dual_engine_fused"}:
+        if not candidates or audit.get("source") not in {"field_llm_fused", "dual_engine_fused", "llm_native_generated", "llm_native_fallback"}:
             continue
         if not all("llm_score" in c for c in candidates):
             continue

@@ -116,3 +116,20 @@ python -m src.experiments aggregate -e A
 LabWars 当前不是让 LLM 自由生成真实行动。真实流程是：continuous latent action field 生成候选动作和结构先验；LLM 对每个候选动作评分；系统融合 `field_score` 与 `llm_score` 后采样 primary action；LLM 再在 selected action 约束下生成公开立场、私下意图和解释文本。
 
 可校准参数见 [`config/action_field.yaml`](config/action_field.yaml)。如需测试某组 motive weights 是否主导结果，可使用 `src.experiments.action_field_ablation.run_action_field_ablation` 做多 seed 消融；如需测试 LLM candidate scoring 是否改变长程轨迹，可使用 `src.experiments.llm_mix_ablation.run_dual_engine_ablation` 扫描双引擎参数 `λ = cognitive_policy_lambda = 0.0 / 0.2 / 0.35 / 0.6 / 1.0`。`λ=0` 表示 Social Physics only，`λ=1` 表示 LLM Cognitive Policy Layer 主导候选排序。报告第 11-13 节会展示 field top3、LLM top3、fused top3、selected action、LLM Override Pressure、Action Field decomposition 和 LLM Influence Footprint。
+## Policy Mode 对照
+
+LabWars 当前默认是 `dual_engine`，并提供三轨对照：
+
+| mode | 行为生成 | 用途 |
+|---|---|---|
+| `social_physics` | 只使用可校准连续社会动力学先验 | 结构压力 baseline |
+| `dual_engine` | Social Physics 候选 + LLM Cognitive scoring | 默认主仿真 |
+| `llm_native` | LLM 直接生成候选动作，再映射/校验到 action schema | LLM-native society 对照 |
+
+```python
+from src.engine import SimConfig, run_simulation
+
+log = run_simulation(SimConfig(policy_mode="llm_native", max_rounds=20, seed=1))
+```
+
+使用 `src.experiments.policy_mode_comparison.run_policy_mode_comparison` 可以比较结构驱动、双引擎混合、语言原生候选生成三种机制。

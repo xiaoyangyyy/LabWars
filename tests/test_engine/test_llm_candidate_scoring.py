@@ -39,5 +39,6 @@ def test_role_policy_can_disable_llm_candidate_scoring(llm_adapter):
     )
 
     assert action is not None
-    assert action["llm_action_scoring"] == {"enabled": False, "source": "field_only"}
+    assert action["llm_action_scoring"]["enabled"] is False
+    assert action["llm_action_scoring"]["source"] == "field_only"
     assert "llm_score" not in action["selected_action"]

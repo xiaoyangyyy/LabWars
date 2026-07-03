@@ -16,8 +16,10 @@ from src.engine.diversity import (
 from src.engine.llm_adapter import LLMAdapter, LLMError
 from src.engine.prompts import (
     ACTION_SCORING_SYSTEM,
+    LLM_NATIVE_POLICY_SYSTEM,
     ROLE_POLICY_SYSTEM,
     build_action_scoring_prompt,
+    build_llm_native_policy_prompt,
     build_role_policy_prompt,
 )
 from src.world.actions import ActionType, get_allowed_actions
@@ -120,10 +122,111 @@ def _coerce_score(value: Any) -> float:
     return max(0.0, min(1.0, score))
 
 
+
+def _normalize_probability_payloads(payloads: list[dict[str, Any]], key: str = "fused_tendency") -> list[dict[str, Any]]:
+    if not payloads:
+        return []
+    probs = _softmax([float(item.get(key, 0.0)) for item in payloads], temperature=0.22)
+    out = []
+    for item, prob in zip(payloads, probs):
+        copied = dict(item)
+        copied["probability"] = round(prob, 5)
+        out.append(copied)
+    return out
+
 class RolePolicyAgent:
     def __init__(self, llm: LLMAdapter, max_retries: int = 3) -> None:
         self.llm = llm
         self.max_retries = max_retries
+
+
+    def _generate_llm_native_candidates(
+        self,
+        agent: Agent,
+        event: EventAtom,
+        world: WorldState,
+        recall: RecallResult | None,
+        allowed_str: list[str],
+        avoid_actions: list[str],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Let the LLM propose the action candidate set for the llm_native contrast mode."""
+        prompt = build_llm_native_policy_prompt(
+            agent,
+            event,
+            world,
+            recall,
+            allowed_str,
+            avoid_actions=avoid_actions,
+        )
+        raw = self.llm.complete_json(LLM_NATIVE_POLICY_SYSTEM, prompt)
+        raw_candidates = raw.get("native_candidates", [])
+        allowed = set(allowed_str)
+        payloads: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        if isinstance(raw_candidates, list):
+            for item in raw_candidates:
+                if not isinstance(item, dict):
+                    continue
+                action_type = str(item.get("type", ""))
+                if action_type not in allowed or action_type in seen:
+                    continue
+                seen.add(action_type)
+                plausibility = _coerce_score(item.get("plausibility", 0.5))
+                intensity = _coerce_score(item.get("intensity", 0.5))
+                cognitive_tendency = (plausibility - 0.5) * 2.0
+                payloads.append({
+                    "type": action_type,
+                    "target": _pick_target(agent, world, event, item.get("target")),
+                    "tendency": round(cognitive_tendency, 4),
+                    "social_physics_tendency": 0.0,
+                    "llm_score": round(plausibility, 4),
+                    "llm_cognitive_tendency": round(cognitive_tendency, 4),
+                    "fused_tendency": round(cognitive_tendency, 4),
+                    "intensity": round(intensity, 4),
+                    "motives": {
+                        "llm_native_plausibility": round(plausibility, 4),
+                    },
+                    "field_decomposition": {
+                        "baseline": 0.0,
+                        "motive_contributions": {},
+                        "event_affinity": 0.0,
+                        "memory_trigger": {},
+                        "raw_tendency": round(cognitive_tendency, 4),
+                        "final_tendency": round(cognitive_tendency, 4),
+                        "llm_native_public_reason": str(item.get("public_reason", ""))[:160],
+                        "llm_native_private_reason": str(item.get("private_reason", ""))[:160],
+                    },
+                    "parameter_source": "llm_native_policy",
+                    "cognitive_policy_lambda": 1.0,
+                    "social_physics_weight": 0.0,
+                    "scoring_source": "llm_native_generated",
+                    "llm_score_reason": str(item.get("private_reason") or item.get("public_reason") or "")[:160],
+                })
+        if not payloads:
+            fallback = allowed_str[0]
+            payloads.append({
+                "type": fallback,
+                "target": _pick_target(agent, world, event, None),
+                "tendency": 0.0,
+                "social_physics_tendency": 0.0,
+                "llm_score": 0.5,
+                "llm_cognitive_tendency": 0.0,
+                "fused_tendency": 0.0,
+                "intensity": 0.5,
+                "motives": {"llm_native_fallback": 1.0},
+                "field_decomposition": {"baseline": 0.0, "motive_contributions": {}, "memory_trigger": {}},
+                "parameter_source": "llm_native_fallback",
+                "cognitive_policy_lambda": 1.0,
+                "social_physics_weight": 0.0,
+                "scoring_source": "llm_native_fallback",
+                "llm_score_reason": "fallback after invalid native candidates",
+            })
+        return _normalize_probability_payloads(payloads, key="fused_tendency"), {
+            "enabled": True,
+            "source": "llm_native_generated",
+            "policy_mode": "llm_native",
+            "raw": raw,
+        }
 
     def _score_candidates(
         self,
@@ -212,6 +315,7 @@ class RolePolicyAgent:
         )
 
         seed = int(config.get("seed", 0) or 0)
+        policy_mode = str(config.get("policy_mode", "dual_engine"))
         candidates = generate_action_candidates(
             agent,
             event,
@@ -222,14 +326,32 @@ class RolePolicyAgent:
             seed=seed,
         )
         base_payload = [c.to_dict() for c in candidates]
-        candidate_payload, scoring_audit = self._score_candidates(
-            agent,
-            event,
-            world,
-            recall,
-            base_payload,
-            config,
-        )
+        if policy_mode == "llm_native":
+            try:
+                candidate_payload, scoring_audit = self._generate_llm_native_candidates(
+                    agent,
+                    event,
+                    world,
+                    recall,
+                    allowed_str,
+                    dynamic_avoid,
+                )
+            except (LLMError, KeyError, TypeError, ValueError) as exc:
+                candidate_payload = base_payload
+                scoring_audit = {"enabled": True, "source": "llm_native_fallback_to_field", "policy_mode": policy_mode, "error": str(exc)}
+        elif policy_mode == "social_physics":
+            candidate_payload = base_payload
+            scoring_audit = {"enabled": False, "source": "field_only", "policy_mode": policy_mode}
+        else:
+            candidate_payload, scoring_audit = self._score_candidates(
+                agent,
+                event,
+                world,
+                recall,
+                base_payload,
+                config,
+            )
+            scoring_audit["policy_mode"] = policy_mode
         selected_payload = _sample_payload(
             candidate_payload,
             seed=seed,

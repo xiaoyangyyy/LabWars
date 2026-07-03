@@ -23,6 +23,20 @@ Rules:
 
 
 
+
+LLM_NATIVE_POLICY_SYSTEM = """You propose candidate actions for an agent in LabWars.
+Output valid JSON only - no markdown.
+
+Rules:
+1. Generate 3-8 plausible action candidates from allowed_actions.
+2. Use only action types from allowed_actions. Do not invent schema labels.
+3. Each candidate must include type, target, intensity, plausibility, public_reason, private_reason.
+4. This is an LLM-native contrast condition: you may propose candidates directly, but the simulator will still validate the schema.
+5. Avoid threshold logic; express continuous plausibility in [0, 1].
+
+Output schema:
+{"native_candidates":[{"type":"action_type","target":"agent_id|project|shared_doc","intensity":0.5,"plausibility":0.5,"public_reason":"...","private_reason":"..."}]}
+"""
 ACTION_SCORING_SYSTEM = """You score candidate actions for a long-horizon academic lab power-struggle simulation (LabWars).
 Output valid JSON only - no markdown.
 
@@ -93,6 +107,64 @@ def _relationship_summary(agent_id: str, edges: list[RelationshipEdge], top_n: i
     return out
 
 
+
+
+def build_llm_native_policy_prompt(
+    agent: Agent,
+    event: EventAtom,
+    world: WorldState,
+    recall: RecallResult | None,
+    allowed_actions: list[str],
+    *,
+    avoid_actions: list[str] | None = None,
+) -> str:
+    state = {
+        "agent_id": agent.id,
+        "role": agent.role.value,
+        "round": event.round,
+        "personality": agent.personality.model_dump(),
+        "beliefs": agent.beliefs.model_dump(),
+        "emotion": agent.emotion.model_dump(),
+        "resources": agent.resources.model_dump(),
+    }
+    event_block = {
+        "event_id": event.event_id,
+        "type": event.type,
+        "source": event.source,
+        "targets": event.targets,
+        "framing": event.framing,
+        "memory_salience": event.memory_salience,
+        "objective_fact": event.objective_fact.raw_statement,
+        "payload": event.payload,
+    }
+    payload = {
+        "state": state,
+        "recent_action_history": recent_action_history(agent, n=5),
+        "avoid_actions": avoid_actions or [],
+        "memory_soft_hooks": memory_action_hints(agent, recall),
+        "event_action_hints": _event_action_hints(agent, event),
+        "recalled_memories": _top_memories(agent, recall),
+        "recall_field": {
+            "valence": recall.recall_field_valence if recall else 0.0,
+            "strength": recall.recall_field_strength if recall else 0.0,
+        },
+        "current_event": event_block,
+        "relationship_summary": _relationship_summary(agent.id, world.relationships),
+        "allowed_actions": allowed_actions,
+        "output_schema": {
+            "native_candidates": [
+                {
+                    "type": "one allowed action type",
+                    "target": "agent_id|project|shared_doc",
+                    "intensity": "0.0-1.0",
+                    "plausibility": "0.0-1.0",
+                    "public_reason": "brief public rationale",
+                    "private_reason": "brief private rationale",
+                }
+            ]
+        },
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 def build_action_scoring_prompt(
     agent: Agent,

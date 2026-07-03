@@ -26,6 +26,23 @@ class FakeLLMAdapter(LLMAdapter):
                 )
             }
 
+        if "native_candidates" in lower_system or "propose candidate actions" in lower_system:
+            payload = json.loads(user)
+            allowed = payload.get("allowed_actions") or ["document_contribution"]
+            agent_id = payload.get("state", {}).get("agent_id", "phd_a")
+            event_type = payload.get("current_event", {}).get("type", "team_meeting")
+            out = []
+            for idx, action_type in enumerate(allowed[:4]):
+                h = int(hashlib.sha256(f"{user}{action_type}{idx}".encode()).hexdigest(), 16)
+                out.append({
+                    "type": action_type,
+                    "target": "pi" if agent_id != "pi" and action_type in ("ask_for_authorship", "privately_lobby_pi", "comply") else "project",
+                    "intensity": round(0.35 + (h % 50) / 100.0, 4),
+                    "plausibility": round(0.25 + (h % 65) / 100.0, 4),
+                    "public_reason": f"{agent_id} frames {action_type} as a response to {event_type}",
+                    "private_reason": f"{action_type} seems subjectively useful under {event_type}",
+                })
+            return {"native_candidates": out}
         if "candidate_scores" in lower_system or "score candidate actions" in lower_system:
             payload = json.loads(user)
             scores = []
