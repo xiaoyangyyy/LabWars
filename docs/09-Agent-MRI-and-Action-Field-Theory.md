@@ -202,6 +202,7 @@ A strong framing is:
 ## 9. Next engineering milestones
 
 - Keep CLI and LLM configuration reproducible across providers.
+- Use Social Potential Field as the v0.2 core theory object.
 - Add explicit pressure-field decomposition to selected actions.
 - Add hierarchical academic society configs.
 - Upgrade generated reports from trajectory summaries to mechanism decompilation reports.

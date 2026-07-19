@@ -9,6 +9,10 @@ from .pipeline import CognitiveStepResult, apply_action_cognition, process_event
 from .relationship import coalition_strength, credit_threat_density, trust_fragmentation
 
 __all__ = [
+    "summarize_action_social_potential",
+    "compute_social_potential",
+    "SocialPotential",
+    "SOCIAL_POTENTIAL_DIMENSIONS",
     "CognitiveStepResult",
     "RecallResult",
     "apply_action_cognition",
@@ -28,3 +32,10 @@ __all__ = [
     "update_emotion",
     "write_memory",
 ]
+
+from .social_potential import (
+    SOCIAL_POTENTIAL_DIMENSIONS,
+    SocialPotential,
+    compute_social_potential,
+    summarize_action_social_potential,
+)

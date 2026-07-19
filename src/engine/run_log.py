@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from src.world.models import EventAtom
+from src.cognition.social_potential import summarize_action_social_potential
 
 from src.cognition.dynamics import (
     COMPLIANCE_ACTIONS,
@@ -143,6 +144,8 @@ def _resolve_memory_cluster_strength(
     round_max: int = 40,
 ) -> float:
     """Prefer live agent memory (reflects R45 delete); fall back to round log sum."""
+    log.outcomes.update(summarize_action_social_potential(log.actions))
+
     if world_agents and "phd_a" in world_agents:
         return _memory_cluster_from_agent(world_agents["phd_a"], round_min=round_min, round_max=round_max)
     return _memory_cluster_strength(log, round_min=round_min, round_max=round_max)

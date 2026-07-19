@@ -8,6 +8,7 @@ import random
 from typing import Any
 
 from src.cognition.memory import RecallResult
+from src.cognition.social_potential import SOCIAL_POTENTIAL_DIMENSIONS, compute_social_potential
 from src.engine.action_selection import generate_action_candidates
 from src.engine.diversity import (
     avoid_actions,
@@ -358,6 +359,17 @@ class RolePolicyAgent:
             round_num=event.round,
             agent_id=agent.id,
         )
+        social_potential = compute_social_potential(
+            world, agent, event, recall, target=selected_payload.get("target")
+        )
+        selected_social_pressure = social_potential.pressure_for_action(str(selected_payload.get("type", "")))
+        social_potential_ablation = {
+            dim: round(
+                social_potential.pressure_for_action(str(selected_payload.get("type", "")), lesions=[dim]),
+                4,
+            )
+            for dim in SOCIAL_POTENTIAL_DIMENSIONS
+        }
 
         last_error = ""
         retry_note = ""
@@ -388,6 +400,12 @@ class RolePolicyAgent:
                 act["action_candidates"] = candidate_payload
                 act["selected_action"] = selected_payload
                 act["private_motives"] = selected_payload.get("motives", {})
+                act["social_potential"] = social_potential.to_dict()
+                act["selected_social_pressure"] = round(selected_social_pressure, 4)
+                act["selected_social_pressure_decomposition"] = social_potential.action_decomposition(
+                    str(selected_payload.get("type", ""))
+                )
+                act["social_potential_ablation"] = social_potential_ablation
                 act["llm_action_scoring"] = scoring_audit
                 return act
             except (LLMError, KeyError, TypeError, ValueError) as exc:

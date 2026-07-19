@@ -18,6 +18,7 @@
 | [docs/07-记忆系统设计详解.md](docs/07-记忆系统设计详解.md) | 主观记忆系统设计 |
 | [docs/08-行为生成与LLM分工审计.md](docs/08-行为生成与LLM分工审计.md) | action field 与 LLM 分工边界 |
 | [docs/09-Agent-MRI-and-Action-Field-Theory.md](docs/09-Agent-MRI-and-Action-Field-Theory.md) | Agent MRI method, action-field theory, pressure fields, and lesion-style experiment roadmap |
+| [docs/10-Social-Potential-Field.md](docs/10-Social-Potential-Field.md) | v0.2 Social Potential Field theory object and ablation protocol |
 
 ## 实施顺序
 
@@ -119,12 +120,12 @@ python -m src.experiments aggregate -e A
 
 LabWars should not evolve toward "more agents chatting". The sharper direction is interpretable mechanisms, intervention experiments, and social pressure fields.
 
-1. Make `AuthorshipPressureField`, `TrustCollapseField`, `AuthorityComplianceField`, and `IntegrityRiskField` explicit, with per-action decomposition.
+1. Use `SocialPotentialField` as the v0.2 core theory object, then make `AuthorshipPressureField`, `TrustCollapseField`, `AuthorityComplianceField`, and `IntegrityRiskField` explicit as projections with per-action decomposition.
 2. Upgrade experiments A-D/V into lesion-style protocols: memory lesion, hierarchy ablation, credit visibility, false evidence, and policy-mode comparison.
 3. Expand from a 14-agent lab into a hierarchical academic society: department / lab / reviewer / editor / funder / industry partner.
 4. Upgrade reports from trajectory summaries into Agent MRI decompilation reports that explain field score, LLM score, fusion, and selected-action causal chains.
 
-See [`docs/09-Agent-MRI-and-Action-Field-Theory.md`](docs/09-Agent-MRI-and-Action-Field-Theory.md).
+See [`docs/09-Agent-MRI-and-Action-Field-Theory.md`](docs/09-Agent-MRI-and-Action-Field-Theory.md) and [`docs/10-Social-Potential-Field.md`](docs/10-Social-Potential-Field.md).
 
 ## Action Field 与 LLM 分工
 

@@ -7,6 +7,7 @@ from .llm_mix_ablation import run_dual_engine_ablation, run_llm_mix_ablation
 from .policy_mode_comparison import run_policy_mode_comparison
 from .report import generate_report
 from .runner import run_single
+from .social_potential_ablation import run_social_potential_ablation, summarize_social_potential_ablation
 
 __all__ = [
     "EXPERIMENT_MATRIX",
@@ -19,4 +20,6 @@ __all__ = [
     "run_llm_mix_ablation",
     "run_policy_mode_comparison",
     "run_single",
+    "run_social_potential_ablation",
+    "summarize_social_potential_ablation",
 ]
