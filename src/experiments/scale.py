@@ -29,6 +29,9 @@ DEFAULT_SCALE_METRICS = [
     "cascade_tail_alpha",
     "cascade_tail_r2",
     "emergent_pattern_score",
+    "action_entropy",
+    "coalition_persistence",
+    "cascade_probability",
 ]
 
 

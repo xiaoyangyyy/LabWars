@@ -29,7 +29,7 @@ from src.engine.run_log import RunLog, finalize_outcomes
 from src.world.actions import ActionType, apply_project_effects
 from src.world.loader import PROJECT_ROOT, load_world
 from src.world.models import ProjectMetrics, WorldState
-from src.world.population import PopulationSpec, expand_population
+from src.world.population import PopulationSpec, equalize_population, expand_population
 
 CONFIG_DIR = PROJECT_ROOT / "config"
 
@@ -64,6 +64,7 @@ class SimConfig:
     population_labs: int | None = None
     cognitive_sampling_top_k: int | None = None
     cognitive_sampling_threshold: float = 0.0
+    egalitarian_initialization: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         llm_cfg = load_llm_config()
@@ -90,6 +91,7 @@ class SimConfig:
             "population_labs": self.population_labs,
             "cognitive_sampling_top_k": self.cognitive_sampling_top_k,
             "cognitive_sampling_threshold": self.cognitive_sampling_threshold,
+            "egalitarian_initialization": self.egalitarian_initialization,
             "llm_provider": self.llm_provider or llm_cfg.get("provider"),
             "llm_model": self.llm_model or llm_cfg.get("model"),
         }
@@ -226,7 +228,9 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
 
     world = _filter_world(load_world(), cfg)
     if cfg.population_size:
-        world = expand_population(world, PopulationSpec(target_size=cfg.population_size, seed=cfg.seed, labs=cfg.population_labs))
+        world = expand_population(world, PopulationSpec(target_size=cfg.population_size, seed=cfg.seed, labs=cfg.population_labs, egalitarian=cfg.egalitarian_initialization))
+    if cfg.egalitarian_initialization and not cfg.population_size:
+        world = equalize_population(world)
     if cfg.hierarchy_lesion:
         world = _apply_hierarchy_lesion(world)
     if cfg.status_lesion:
@@ -255,6 +259,7 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         "population_labs": cfg.population_labs,
         "cognitive_sampling_top_k": cfg.cognitive_sampling_top_k,
         "cognitive_sampling_threshold": cfg.cognitive_sampling_threshold,
+        "egalitarian_initialization": cfg.egalitarian_initialization,
     }
 
     for round_num in range(1, cfg.max_rounds + 1):

@@ -256,6 +256,31 @@ def emergent_pattern_score(log: RunLog) -> float:
         min(1.0, conflict_cascade_length(log) / 10.0),
     ]
     return round(_safe_mean(parts), 4)
+
+def action_entropy(log: RunLog) -> float:
+    counts: dict[str, float] = defaultdict(float)
+    for action in log.actions:
+        counts[str(action.get("type", "unknown"))] += 1.0
+    return round(_normalized_entropy(list(counts.values())), 4)
+
+
+def coalition_persistence(log: RunLog) -> float:
+    vals = [float(r.get("metrics", {}).get("coalition_strength", 0.0)) for r in log.round_records]
+    if len(vals) < 2:
+        return 0.0
+    diffs = [abs(b - a) for a, b in zip(vals, vals[1:])]
+    return round(max(0.0, 1.0 - _safe_mean(diffs)), 4)
+
+
+def cascade_probability(log: RunLog) -> float:
+    if not log.round_records:
+        return 0.0
+    conflict_rounds = {
+        int(a.get("round", 0))
+        for a in log.actions
+        if a.get("type") in PROTEST_ACTIONS or a.get("type") in REBEL_ACTIONS or "authorship" in str(a.get("type", ""))
+    }
+    return round(len(conflict_rounds) / len(log.round_records), 4)
 def compute_social_emergence_metrics(log: RunLog) -> dict[str, float]:
     """Compute benchmark-level social emergence metrics from a completed run."""
     return {
@@ -273,4 +298,7 @@ def compute_social_emergence_metrics(log: RunLog) -> dict[str, float]:
         "cascade_tail_alpha": cascade_tail_alpha(log),
         "cascade_tail_r2": cascade_tail_r2(log),
         "emergent_pattern_score": emergent_pattern_score(log),
+        "action_entropy": action_entropy(log),
+        "coalition_persistence": coalition_persistence(log),
+        "cascade_probability": cascade_probability(log),
     }

@@ -13,6 +13,8 @@ from src.experiments.runner import run_single
 from src.experiments.scale import run_scale_experiment
 from src.experiments.scientific_protocol import run_scientific_protocol
 from src.experiments.policy_protocol import run_policy_comparison_protocol
+from src.experiments.sampling_frontier import run_sampling_frontier
+from src.experiments.emergence_challenge import run_egalitarian_emergence_challenge
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -108,6 +110,46 @@ def cmd_policy_compare(args: argparse.Namespace) -> None:
     )
     print(result.summary)
 
+
+
+def _parse_k_list(raw: str) -> list[int | str]:
+    values: list[int | str] = []
+    for part in raw.split(","):
+        item = part.strip()
+        if not item:
+            continue
+        if item.lower() in {"full", "all"}:
+            values.append("full")
+        else:
+            values.append(int(item))
+    return values
+
+
+def cmd_sampling_frontier(args: argparse.Namespace) -> None:
+    result = run_sampling_frontier(
+        population_size=args.population_size,
+        rounds=args.rounds,
+        seeds=list(range(args.seeds)),
+        k_values=_parse_k_list(args.k_values),
+        llm_provider=args.llm_provider,
+        output_dir=args.output,
+        write_output=True,
+    )
+    print(result.summary)
+
+
+def cmd_egalitarian_challenge(args: argparse.Namespace) -> None:
+    result = run_egalitarian_emergence_challenge(
+        population_size=args.population_size,
+        rounds=args.rounds,
+        seeds=list(range(args.seeds)),
+        llm_provider=args.llm_provider,
+        policy_mode=args.policy_mode,
+        output_dir=args.output,
+        write_output=True,
+    )
+    print(result.summary)
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="labwars-experiments", description="LabWars Part 4 experiment CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -169,6 +211,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_policy.add_argument("--sampled-top-k", type=int, default=20)
     p_policy.add_argument("--output", "-o", default=None)
     p_policy.set_defaults(func=cmd_policy_compare)
+    p_frontier = sub.add_parser("sampling-frontier", help="Sweep cognitive sampling k and report compute/emergence frontier")
+    p_frontier.add_argument("--population-size", type=int, default=100)
+    p_frontier.add_argument("--rounds", type=int, default=100)
+    p_frontier.add_argument("--seeds", type=int, default=3)
+    p_frontier.add_argument("--k-values", default="0,5,10,20,50,100,full")
+    p_frontier.add_argument("--llm-provider", default="scripted")
+    p_frontier.add_argument("--output", "-o", default=None)
+    p_frontier.set_defaults(func=cmd_sampling_frontier)
+
+    p_equal = sub.add_parser("egalitarian-challenge", help="Test emergence from equal initial capability/resource/status/network")
+    p_equal.add_argument("--population-size", type=int, default=500)
+    p_equal.add_argument("--rounds", type=int, default=500)
+    p_equal.add_argument("--seeds", type=int, default=10)
+    p_equal.add_argument("--llm-provider", default="scripted")
+    p_equal.add_argument("--policy-mode", default="social_physics", choices=["social_physics", "dual_engine", "llm_native"])
+    p_equal.add_argument("--output", "-o", default=None)
+    p_equal.set_defaults(func=cmd_egalitarian_challenge)
 
     return parser
 

@@ -22,6 +22,7 @@ class PopulationSpec:
     hierarchy: bool = True
     labs: int | None = None
     external_fraction: float = 0.12
+    egalitarian: bool = False
 
 
 def _rng_for(seed: int, *parts: object) -> random.Random:
@@ -110,6 +111,57 @@ def _relationship_with_labs(edge: RelationshipEdge, agents: dict[str, Agent]) ->
     return adjusted
 
 
+
+
+def equalize_population(world: WorldState) -> WorldState:
+    """Set all agents and internal edges to equal initial social conditions.
+
+    This is an anti-script intervention: any later hierarchy, inequality, or
+    coalition structure must come from endogenous dynamics rather than unequal
+    initial status, resource, or network conditions.
+    """
+    w = copy.deepcopy(world)
+    internal = [aid for aid in w.world_config.get("internal_agents", []) if aid in w.agents]
+    for agent in w.agents.values():
+        for field in type(agent.personality).model_fields:
+            setattr(agent.personality, field, 0.50)
+        agent.personality.cooperation = 0.55
+        agent.personality.conflict_avoidance = 0.45
+        for field in type(agent.beliefs).model_fields:
+            setattr(agent.beliefs, field, 0.50)
+        agent.beliefs.my_contribution_recognized = 0.50
+        agent.beliefs.others_are_free_riding = 0.0
+        for field in type(agent.emotion).model_fields:
+            setattr(agent.emotion, field, 0.30)
+        agent.emotion.confidence = 0.50
+        agent.emotion.hope = 0.50
+        agent.emotion.loyalty = 0.50
+        for field in type(agent.resources).model_fields:
+            setattr(agent.resources, field, 0.50)
+        agent.memory = []
+        agent.memory_recall_log = []
+        agent.action_history = []
+        agent.public_position = {}
+        agent.private_intent = {}
+        agent.extra_traits = dict(agent.extra_traits)
+        agent.extra_traits["egalitarian_initialization"] = True
+    for edge in w.relationships:
+        edge.trust = 0.50
+        edge.resentment = 0.0
+        edge.dependency = 0.50
+        edge.obligation = 0.0
+        edge.perceived_credit_threat = 0.0
+        edge.communication_frequency = 0.50
+        edge.alliance = 0.0
+        edge.information_access = 0.50
+        edge.last_interaction_valence = 0.0
+    for dimension in list(w.project.contribution_ledger):
+        if internal:
+            share = round(1.0 / len(internal), 6)
+            w.project.contribution_ledger[dimension] = {aid: share for aid in internal}
+    w.world_config["egalitarian_initialization"] = True
+    return w
+
 def expand_population(world: WorldState, spec: PopulationSpec) -> WorldState:
     """Return a deterministic larger organization from the canonical LabWars world.
 
@@ -122,6 +174,8 @@ def expand_population(world: WorldState, spec: PopulationSpec) -> WorldState:
         w = copy.deepcopy(world)
         w.world_config["population_size"] = len(w.agents)
         w.world_config["population_synthesis"] = "canonical"
+        if spec.egalitarian:
+            w = equalize_population(w)
         return w
 
     w = copy.deepcopy(world)
@@ -179,5 +233,7 @@ def expand_population(world: WorldState, spec: PopulationSpec) -> WorldState:
         total = sum(float(v) for v in ledger.values()) or 1.0
         for key in list(ledger):
             ledger[key] = round(float(ledger[key]) / total, 4)
+    if spec.egalitarian:
+        w = equalize_population(w)
     return w
 

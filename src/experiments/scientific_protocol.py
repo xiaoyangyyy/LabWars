@@ -38,6 +38,9 @@ PROTOCOL_METRICS = [
     "cascade_tail_alpha",
     "cascade_tail_r2",
     "emergent_pattern_score",
+    "action_entropy",
+    "coalition_persistence",
+    "cascade_probability",
     "authorship_dispute_index",
     "career_hostage_index",
 ]

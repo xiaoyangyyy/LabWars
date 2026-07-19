@@ -131,3 +131,13 @@ python -m src.experiments policy-compare --population-size 50 --rounds 60 --seed
 ```
 
 See [`docs/16-Emergence-and-Cognitive-Sampling.md`](16-Emergence-and-Cognitive-Sampling.md).
+
+## 10. Reviewer challenge protocols
+
+LabWars includes explicit challenge protocols:
+
+- `egalitarian-challenge`: tests emergence from equal initial capability/resource/status/network.
+- `policy-compare`: tests H1/H2/H3 about hybrid cognition with action entropy, coalition persistence, and cascade probability.
+- `sampling-frontier`: sweeps k=0/5/10/20/50/100/full to measure the LLM-call vs emergence frontier.
+
+See [`docs/17-Reviewer-Challenge-Protocols.md`](17-Reviewer-Challenge-Protocols.md).

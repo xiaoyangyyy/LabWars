@@ -8,6 +8,8 @@ from .llm_mix_ablation import run_dual_engine_ablation, run_llm_mix_ablation
 from .organization_ablation import run_organization_ablation
 from .policy_mode_comparison import run_policy_mode_comparison
 from .policy_protocol import PolicyComparisonResult, run_policy_comparison_protocol
+from .sampling_frontier import SamplingFrontierResult, run_sampling_frontier
+from .emergence_challenge import EgalitarianEmergenceResult, run_egalitarian_emergence_challenge
 from .report import generate_report
 from .runner import run_single
 from .scale import ScaleExperimentResult, run_scale_experiment
@@ -29,6 +31,10 @@ __all__ = [
     "run_policy_mode_comparison",
     "run_policy_comparison_protocol",
     "PolicyComparisonResult",
+    "run_sampling_frontier",
+    "SamplingFrontierResult",
+    "run_egalitarian_emergence_challenge",
+    "EgalitarianEmergenceResult",
     "run_scale_experiment",
     "ScaleExperimentResult",
     "run_scientific_protocol",
