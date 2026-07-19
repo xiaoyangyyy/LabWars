@@ -1,21 +1,9 @@
-# LabWars LLM 配置 — 智算 OpenAI 兼容接口
-# API Key 通过环境变量 OPENAI_API_KEY 注入，勿写入此文件
-
-provider: openai
-base_url: https://ai.azya.top/v1
-model: qwen3.5
+﻿provider: openai
+base_url: https://api.deepseek.com
+model: deepseek-v4-flash
 temperature: 0.65
 top_p: 0.88
 max_tokens: 1024
-api_key_env: OPENAI_API_KEY
+api_key_env: DEEPSEEK_API_KEY
 request_delay_sec: 3.0
 max_retries: 12
-
-# 其他 provider 示例
-# provider: anthropic
-# model: claude-3-5-haiku-20241022
-# api_key_env: ANTHROPIC_API_KEY
-
-# provider: ollama
-# model: llama3.2
-# base_url: http://localhost:11434
