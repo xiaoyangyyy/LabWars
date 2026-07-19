@@ -102,3 +102,7 @@ The model is useful only if interventions change trajectories in predictable way
 ## 7. Why this matters
 
 Without `z_i(t)`, LabWars is merely a simulator with many variables. With `z_i(t)`, it becomes an Agent Organization MRI model: a compact state representation, a transition function, a policy decomposition, and an intervention protocol.
+
+## 8. Benchmark layer
+
+The formal state object is evaluated through the benchmark tasks in [`docs/13-Agent-Social-Dynamics-Benchmark.md`](13-Agent-Social-Dynamics-Benchmark.md).

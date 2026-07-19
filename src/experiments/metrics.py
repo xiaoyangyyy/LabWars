@@ -7,6 +7,7 @@ from typing import Any
 
 from src.engine.run_log import RunLog, extract_outcome, _memory_cluster_strength
 from src.cognition.power import career_hostage_index, pi_control_surface
+from src.experiments.social_metrics import compute_social_emergence_metrics
 
 
 SNAPSHOT_ROUNDS = (1, 20, 40, 60)
@@ -41,6 +42,7 @@ def compute_run_metrics(log: RunLog) -> dict[str, Any]:
         "critic_audit_metrics": _critic_audit_metrics(log),
         "power_surface_final": _power_surface_from_log(log),
         "path_level_causal_chain": _path_level_causal_chain(log),
+        "social_emergence_metrics": compute_social_emergence_metrics(log),
     }
 
 

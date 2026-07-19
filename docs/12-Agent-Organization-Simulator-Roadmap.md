@@ -86,3 +86,7 @@ The next practical step is to keep LabWars as the reference environment while ma
 - keep SocialPotentialField domain-general;
 - turn authorship-specific metrics into one family of credit-conflict metrics;
 - add organization-ablation reports as a standard benchmark artifact.
+
+## 7. Benchmark layer
+
+The domain-general simulator roadmap is operationalized by the benchmark task protocol in [`docs/13-Agent-Social-Dynamics-Benchmark.md`](13-Agent-Social-Dynamics-Benchmark.md).

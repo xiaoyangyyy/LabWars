@@ -29,6 +29,14 @@ DEFAULT_ORGANIZATION_OUTCOMES = [
     "career_hostage_index",
     "integrity_risk",
     "llm_override_pressure",
+    "trust_entropy",
+    "power_concentration_gini",
+    "alliance_modularity_proxy",
+    "conflict_cascade_length",
+    "reputation_volatility",
+    "credit_attribution_gap",
+    "social_state_volatility",
+    "organization_fragility_index",
 ]
 
 
@@ -97,6 +105,9 @@ def _measure(log: RunLog, outcome: str, metrics: dict[str, Any]) -> float:
         return _round_metric(log, "integrity_risk")
     if outcome == "llm_override_pressure":
         return float(metrics.get("llm_scoring_influence", {}).get("mean_override_pressure", 0.0))
+    social = metrics.get("social_emergence_metrics", {})
+    if outcome in social:
+        return float(social.get(outcome, 0.0))
     if outcome in log.outcomes:
         return float(log.outcomes.get(outcome, 0.0))
     return float(extract_outcome(log, outcome))
