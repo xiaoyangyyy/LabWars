@@ -74,3 +74,18 @@ LabWars should be evaluated as a scientific instrument when it can satisfy three
 3. Emergence metrics: trust, power, alliance, conflict, reputation, credit, and fragility measurements.
 
 Together, these make LabWars a benchmark for Agent Social Dynamics rather than a narrative simulator.
+
+## 6. Scale protocol
+
+LabWars now separates the benchmark into two layers:
+
+- `canonical_mri`: 14 agents, 60 rounds, best for interpretable causal traces.
+- `scale_baseline`: 50/100/200 agents, 100-1000 rounds, best for testing whether social-emergence metrics remain stable beyond one authored cast.
+
+Command-line entry point:
+
+```powershell
+python -m src.experiments scale --population-sizes 14,50,100,200 --rounds 100 --seeds 5 --llm-provider scripted --policy-mode social_physics
+```
+
+The scale layer uses deterministic archetype jitter and hierarchical lab assignment; it does not add new hand-authored conflict scripts. See [`docs/14-Scale-and-Theory-Protocol.md`](14-Scale-and-Theory-Protocol.md).

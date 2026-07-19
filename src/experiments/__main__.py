@@ -10,6 +10,7 @@ from src.experiments.batch import run_batch, run_full_matrix
 from src.experiments.conditions import list_conditions
 from src.experiments.report import generate_report
 from src.experiments.runner import run_single
+from src.experiments.scale import run_scale_experiment
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -55,6 +56,25 @@ def cmd_aggregate(args: argparse.Namespace) -> None:
     print(path)
 
 
+
+
+def _parse_int_list(raw: str) -> list[int]:
+    return [int(part.strip()) for part in raw.split(",") if part.strip()]
+
+
+def cmd_scale(args: argparse.Namespace) -> None:
+    result = run_scale_experiment(
+        population_sizes=_parse_int_list(args.population_sizes),
+        rounds=args.rounds,
+        seeds=list(range(args.seeds)),
+        policy_mode=args.policy_mode,
+        llm_provider=args.llm_provider,
+        population_labs=args.population_labs,
+        output_dir=args.output,
+        write_output=True,
+    )
+    print(result.summary)
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="labwars-experiments", description="LabWars Part 4 experiment CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -88,6 +108,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_agg.add_argument("--validity", action="store_true")
     p_agg.add_argument("--seeds", type=int, default=10)
     p_agg.set_defaults(func=cmd_aggregate)
+    p_scale = sub.add_parser("scale", help="Run population-size scale benchmark")
+    p_scale.add_argument("--population-sizes", default="14,50,100,200", help="Comma-separated sizes, e.g. 14,50,100,200")
+    p_scale.add_argument("--rounds", type=int, default=100)
+    p_scale.add_argument("--seeds", type=int, default=3)
+    p_scale.add_argument("--policy-mode", default="social_physics", choices=["social_physics", "dual_engine", "llm_native"])
+    p_scale.add_argument("--llm-provider", default="scripted")
+    p_scale.add_argument("--population-labs", type=int, default=None)
+    p_scale.add_argument("--output", "-o", default=None)
+    p_scale.set_defaults(func=cmd_scale)
 
     return parser
 

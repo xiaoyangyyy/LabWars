@@ -26,6 +26,70 @@ class LLMAdapter(ABC):
         ...
 
 
+
+class ScriptedAdapter(LLMAdapter):
+    """Deterministic local adapter for non-LLM scale baselines."""
+
+    def complete_json(self, system: str, user: str) -> dict[str, Any]:
+        try:
+            payload = json.loads(user)
+        except json.JSONDecodeError:
+            payload = {}
+        lower_system = system.lower()
+        if "memory interpretation" in lower_system:
+            event_type = payload.get("event_type") or payload.get("current_event", {}).get("type", "event")
+            return {"interpretation": f"scripted interpretation of {event_type}"}
+        if "candidate_scores" in lower_system or "score candidate actions" in lower_system:
+            return {
+                "candidate_scores": [
+                    {
+                        "type": candidate.get("type", "document_contribution"),
+                        "plausibility": 0.5,
+                        "reason": "neutral scripted baseline",
+                    }
+                    for candidate in payload.get("action_candidates", [])
+                ]
+            }
+        if "native_candidates" in lower_system or "propose candidate actions" in lower_system:
+            allowed = payload.get("allowed_actions") or ["document_contribution"]
+            return {
+                "native_candidates": [
+                    {
+                        "type": action_type,
+                        "target": "project",
+                        "intensity": 0.5,
+                        "plausibility": 0.5,
+                        "public_reason": "scripted native baseline",
+                        "private_reason": "scripted native baseline",
+                    }
+                    for action_type in allowed[:4]
+                ]
+            }
+        sampled = payload.get("sampled_action") or {}
+        action_type = sampled.get("type") or (payload.get("allowed_actions") or ["document_contribution"])[0]
+        target = sampled.get("target") or "project"
+        return {
+            "primary_action": {
+                "type": action_type,
+                "target": target,
+                "intensity": float(sampled.get("intensity", 0.5)),
+            },
+            "communication_action": {
+                "type": "share_result",
+                "target": target,
+                "content_summary": "scripted constrained rendering",
+            },
+            "public_position": {
+                "statement_type": "neutral",
+                "authorship_claim": "any_authorship",
+            },
+            "private_intent": {
+                "goal": "follow_selected_action",
+                "strategy": action_type,
+                "trust_pi": payload.get("state", {}).get("beliefs", {}).get("pi_fairness", 0.5),
+            },
+        }
+
 def _parse_json_content(text: str) -> dict[str, Any]:
     text = text.strip()
     if text.startswith("```"):
@@ -263,4 +327,6 @@ def get_adapter(
         return AnthropicAdapter(model=mdl, temperature=temp, max_tokens=tokens, api_key=api_key or os.environ.get(env_key))
     if prov == "ollama":
         return OllamaAdapter(model=mdl, temperature=temp, base_url=base_url or cfg.get("base_url", "http://localhost:11434"))
+    if prov in {"scripted", "deterministic", "none"}:
+        return ScriptedAdapter()
     raise LLMError(f"Unknown LLM provider: {prov}")

@@ -1,4 +1,4 @@
-﻿"""LabWars Part 4 鈥?experiment runners and analysis."""
+"""LabWars Part 4 鈥?experiment runners and analysis."""
 
 from .aggregate import aggregate_experiment
 from .benchmark_tasks import list_benchmark_tasks, run_benchmark_task
@@ -9,6 +9,7 @@ from .organization_ablation import run_organization_ablation
 from .policy_mode_comparison import run_policy_mode_comparison
 from .report import generate_report
 from .runner import run_single
+from .scale import ScaleExperimentResult, run_scale_experiment
 from .social_potential_ablation import run_social_potential_ablation, summarize_social_potential_ablation
 
 __all__ = [
@@ -24,6 +25,8 @@ __all__ = [
     "run_llm_mix_ablation",
     "run_organization_ablation",
     "run_policy_mode_comparison",
+    "run_scale_experiment",
+    "ScaleExperimentResult",
     "run_single",
     "run_social_potential_ablation",
     "summarize_social_potential_ablation",

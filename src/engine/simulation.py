@@ -1,4 +1,4 @@
-﻿"""LabWars simulation engine 鈥?main loop."""
+"""LabWars simulation engine 鈥?main loop."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ from src.engine.run_log import RunLog, finalize_outcomes
 from src.world.actions import ActionType, apply_project_effects
 from src.world.loader import PROJECT_ROOT, load_world
 from src.world.models import ProjectMetrics, WorldState
+from src.world.population import PopulationSpec, expand_population
 
 CONFIG_DIR = PROJECT_ROOT / "config"
 
@@ -57,6 +58,8 @@ class SimConfig:
     cognitive_policy_lambda: float | None = 0.35
     llm_action_score_mix: float = 0.35
     hierarchy_lesion: bool = False
+    population_size: int | None = None
+    population_labs: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         llm_cfg = load_llm_config()
@@ -77,6 +80,8 @@ class SimConfig:
             "cognitive_policy_lambda": self.cognitive_policy_lambda,
             "llm_action_score_mix": self.llm_action_score_mix,
             "hierarchy_lesion": self.hierarchy_lesion,
+            "population_size": self.population_size,
+            "population_labs": self.population_labs,
             "llm_provider": self.llm_provider or llm_cfg.get("provider"),
             "llm_model": self.llm_model or llm_cfg.get("model"),
         }
@@ -174,6 +179,8 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
     log = RunLog(run_id=run_id, config=cfg.to_dict())
 
     world = _filter_world(load_world(), cfg)
+    if cfg.population_size:
+        world = expand_population(world, PopulationSpec(target_size=cfg.population_size, seed=cfg.seed, labs=cfg.population_labs))
     if cfg.hierarchy_lesion:
         world = _apply_hierarchy_lesion(world)
     llm = _resolve_llm(cfg)
@@ -192,6 +199,8 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         "offstage_agents": cfg.offstage_agents,
         "offstage_min_round": 21,
         "hierarchy_lesion": cfg.hierarchy_lesion,
+        "population_size": cfg.population_size,
+        "population_labs": cfg.population_labs,
     }
 
     for round_num in range(1, cfg.max_rounds + 1):
@@ -282,6 +291,8 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
     finalize_outcomes(log, world.agents, world.relationships)
     log.outcomes["career_hostage_index"] = career_hostage_index(world)
     log.outcomes["pi_control_surface"] = pi_control_surface(world)
+    from src.experiments.social_metrics import compute_social_emergence_metrics
+    log.outcomes.update(compute_social_emergence_metrics(log))
     log.outcomes["probe_suggestions"] = probe.suggest(log.round_records)
 
     if cfg.output_dir:

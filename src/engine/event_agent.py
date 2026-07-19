@@ -1,4 +1,4 @@
-﻿"""State-driven Event Agent.
+"""State-driven Event Agent.
 
 Anchors remain available as background pressure, but non-mandatory rounds now
 sample from a continuous event field derived from project, relationship,
@@ -368,7 +368,15 @@ class EventAgent:
     def generate(self, round_num: int, world: WorldState) -> EventAtom | None:
         anchor = self._by_round.get(round_num)
         if anchor is None:
-            return None
+            if not self.state_events:
+                return None
+            candidates = self._state_candidates(round_num, world)
+            probs = _softmax([c.tendency for c in candidates], temperature=0.24)
+            for candidate, prob in zip(candidates, probs):
+                candidate.probability = prob
+                setattr(candidate, "_all_candidates", candidates)
+            selected = self._sample_candidate(candidates, round_num)
+            return self._materialize(selected, round_num, None)
         if round_num == 60:
             event = copy.deepcopy(anchor)
             event.payload = {**event.payload, "generator": "terminal_anchor"}
@@ -409,8 +417,4 @@ def is_agent_active(agent_id: str, round_num: int, config: dict[str, Any]) -> bo
     if agent_id == "rival_lab_h":
         return round_num >= 21
     return True
-
-
-
-
 

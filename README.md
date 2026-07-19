@@ -1,4 +1,4 @@
-﻿# LabWars
+# LabWars
 
 > **LabWars 不模拟科研成功，而是反编译科研合作为什么变成内斗。**
 
@@ -22,6 +22,7 @@
 | [docs/11-Agent-Social-State-Model.md](docs/11-Agent-Social-State-Model.md) | unified Agent Social State model and fusion policy equations |
 | [docs/12-Agent-Organization-Simulator-Roadmap.md](docs/12-Agent-Organization-Simulator-Roadmap.md) | roadmap from LabWars to domain-general Agent Organization Simulator |
 | [docs/13-Agent-Social-Dynamics-Benchmark.md](docs/13-Agent-Social-Dynamics-Benchmark.md) | benchmark tasks and social emergence metrics for Agent Social Dynamics |
+| [docs/14-Scale-and-Theory-Protocol.md](docs/14-Scale-and-Theory-Protocol.md) | 50-200 agent scale protocol, 100-1000 round runs, and theory anchors |
 
 ## 实施顺序
 
@@ -49,7 +50,7 @@ LabWars/
 ## 当前状态
 
 - [x] 项目文档体系建立（v0.1.0）
-- [x] Part 1-4 全部实现（**96 tests passed**）
+- [x] Part 1-4 全部实现（**120 tests passed**）
 - [x] **Primary action 由 continuous latent action field 生成候选，并融合 LLM candidate scoring 后采样；memory interpretation 与 public/private stance 经 LLM**（OpenAI / Anthropic / Ollama）
 - [x] LLM 不自由覆盖 primary action；它对候选动作做 subjective plausibility scoring，系统融合 field_score 与 llm_score 后采样真实行动
 
@@ -91,6 +92,24 @@ log = run_simulation(SimConfig(
     llm_model="gpt-4o-mini",
 ))
 ```
+
+
+## Scale benchmark
+
+The canonical 14-agent / 60-round lab remains the interpretable Agent MRI scenario. For reviewer-facing scale tests, LabWars can synthesize 50-200 agent hierarchical organizations and continue state-generated events beyond the original 60 anchor rounds.
+
+```powershell
+# Fast smoke test
+python -m src.experiments scale --population-sizes 14,50 --rounds 20 --seeds 1 --llm-provider scripted --policy-mode social_physics
+
+# Reviewer-facing social-physics baseline
+python -m src.experiments scale --population-sizes 14,50,100,200 --rounds 100 --seeds 5 --llm-provider scripted --policy-mode social_physics
+
+# Long-horizon baseline
+python -m src.experiments scale --population-sizes 50,100,200 --rounds 1000 --seeds 10 --llm-provider scripted --policy-mode social_physics
+```
+
+Use real LLMs for smaller model-comparison runs first, because LLM-backed large runs call the model for every active agent and round.
 
 ## 快速验证
 
