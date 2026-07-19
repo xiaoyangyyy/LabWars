@@ -13,6 +13,8 @@ ORGANIZATION_ABLATION_CONDITIONS = [
     "full",
     "memory_lesion",
     "hierarchy_lesion",
+    "status_lesion",
+    "trust_lesion",
     "social_physics_only",
     "llm_native",
     "llm_scoring_off",
@@ -59,6 +61,8 @@ def _clone_config(base: SimConfig, *, seed: int, condition: str) -> SimConfig:
         "seed": seed,
         "disable_memory": False,
         "hierarchy_lesion": False,
+        "status_lesion": False,
+        "trust_lesion": False,
         "policy_mode": "dual_engine",
         "enable_llm_action_scoring": True,
         "cognitive_policy_lambda": 0.35,
@@ -68,6 +72,10 @@ def _clone_config(base: SimConfig, *, seed: int, condition: str) -> SimConfig:
         data["disable_memory"] = True
     elif condition == "hierarchy_lesion":
         data["hierarchy_lesion"] = True
+    elif condition == "status_lesion":
+        data["status_lesion"] = True
+    elif condition == "trust_lesion":
+        data["trust_lesion"] = True
     elif condition == "social_physics_only":
         data["policy_mode"] = "social_physics"
         data["enable_llm_action_scoring"] = False
@@ -127,6 +135,8 @@ def run_organization_ablation(
     - full: dual-engine baseline
     - memory_lesion: disable pre-decision recall and memory writes
     - hierarchy_lesion: flatten PI-centered dependency and authority pressure
+    - status_lesion: remove status, authorship entitlement, and credit-threat incentives
+    - trust_lesion: remove trust/alliance as a dynamic state channel
     - social_physics_only: field-only policy mode
     - llm_native: LLM proposes candidates directly
     - llm_scoring_off: candidates come from the field, no LLM candidate scoring
@@ -149,6 +159,8 @@ def run_organization_ablation(
                 "policy_mode": log.config.get("policy_mode"),
                 "disable_memory": bool(log.config.get("disable_memory")),
                 "hierarchy_lesion": bool(log.config.get("hierarchy_lesion")),
+                "status_lesion": bool(log.config.get("status_lesion")),
+                "trust_lesion": bool(log.config.get("trust_lesion")),
                 **{name: round(_measure(log, name, metrics), 6) for name in outcome_names},
             })
 

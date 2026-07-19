@@ -10,6 +10,7 @@ from .policy_mode_comparison import run_policy_mode_comparison
 from .report import generate_report
 from .runner import run_single
 from .scale import ScaleExperimentResult, run_scale_experiment
+from .scientific_protocol import ScientificProtocolResult, run_scientific_protocol
 from .social_potential_ablation import run_social_potential_ablation, summarize_social_potential_ablation
 
 __all__ = [
@@ -27,6 +28,8 @@ __all__ = [
     "run_policy_mode_comparison",
     "run_scale_experiment",
     "ScaleExperimentResult",
+    "run_scientific_protocol",
+    "ScientificProtocolResult",
     "run_single",
     "run_social_potential_ablation",
     "summarize_social_potential_ablation",

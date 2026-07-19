@@ -102,3 +102,18 @@ python -m src.experiments scale --population-sizes 14,50 --rounds 60 --seeds 2 -
 ## 7. Claim boundary
 
 The current scalable layer supports the claim that LabWars is moving from a single simulated story toward a benchmarkable artificial organization. It does not yet prove external validity to human labs. The right next validation step is to compare metric signatures against historical organizational cases, lab ethnographies, or controlled human multi-player studies.
+
+## 8. Standard experimental protocol CLI
+
+The scale runner varies only population size. The protocol runner varies population size and mechanism lesions together:
+
+```powershell
+python -m src.experiments protocol --population-sizes 10,50,100,500 --rounds 500 --seeds 100 --conditions baseline,no_memory,no_status,no_trust,no_hierarchy --llm-provider scripted --policy-mode social_physics
+```
+
+Outputs:
+
+- `agent_social_dynamics_protocol_v1_social_physics_500r.json`
+- `agent_social_dynamics_protocol_v1_social_physics_500r.md`
+
+Use the JSON for statistics and the Markdown file for reviewer-readable summaries.

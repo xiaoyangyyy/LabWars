@@ -58,6 +58,8 @@ class SimConfig:
     cognitive_policy_lambda: float | None = 0.35
     llm_action_score_mix: float = 0.35
     hierarchy_lesion: bool = False
+    status_lesion: bool = False
+    trust_lesion: bool = False
     population_size: int | None = None
     population_labs: int | None = None
 
@@ -80,6 +82,8 @@ class SimConfig:
             "cognitive_policy_lambda": self.cognitive_policy_lambda,
             "llm_action_score_mix": self.llm_action_score_mix,
             "hierarchy_lesion": self.hierarchy_lesion,
+            "status_lesion": self.status_lesion,
+            "trust_lesion": self.trust_lesion,
             "population_size": self.population_size,
             "population_labs": self.population_labs,
             "llm_provider": self.llm_provider or llm_cfg.get("provider"),
@@ -136,6 +140,44 @@ def _apply_hierarchy_lesion(world: WorldState) -> WorldState:
     w.world_config["hierarchy_lesion"] = True
     return w
 
+
+
+def _apply_status_lesion(world: WorldState) -> WorldState:
+    """Remove status/credit-attribution incentives while preserving task pressure."""
+    w = copy.deepcopy(world)
+    internal = [aid for aid in w.world_config.get("internal_agents", []) if aid in w.agents]
+    for agent in w.agents.values():
+        agent.personality.credit_sensitivity = min(agent.personality.credit_sensitivity, 0.18)
+        agent.personality.ambition = min(agent.personality.ambition, 0.48)
+        agent.beliefs.my_first_author_probability = 0.35
+        agent.beliefs.my_contribution_recognized = max(agent.beliefs.my_contribution_recognized, 0.78)
+        agent.beliefs.others_are_free_riding = min(agent.beliefs.others_are_free_riding, 0.08)
+    for edge in w.relationships:
+        edge.perceived_credit_threat = min(edge.perceived_credit_threat, 0.06)
+    for dimension, ledger in w.project.contribution_ledger.items():
+        keys = [aid for aid in internal if aid in w.agents]
+        if not keys:
+            continue
+        share = round(1.0 / len(keys), 6)
+        w.project.contribution_ledger[dimension] = {aid: share for aid in keys}
+    w.project.project.authorship_conflict = min(w.project.project.authorship_conflict, 0.06)
+    w.world_config["status_lesion"] = True
+    return w
+
+
+def _apply_trust_lesion(world: WorldState) -> WorldState:
+    """Cut trust/alliance as a state channel while leaving other social pressure intact."""
+    w = copy.deepcopy(world)
+    for agent in w.agents.values():
+        agent.beliefs.team_trust = 0.50
+    for edge in w.relationships:
+        edge.trust = 0.50
+        edge.resentment = 0.0
+        edge.alliance = 0.0
+        edge.last_interaction_valence = 0.0
+    w.world_config["trust_lesion"] = True
+    return w
+
 def _shuffle_memory_refs(world: WorldState, seed: int) -> None:
     rng = random.Random(seed)
     for agent in world.agents.values():
@@ -183,6 +225,10 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         world = expand_population(world, PopulationSpec(target_size=cfg.population_size, seed=cfg.seed, labs=cfg.population_labs))
     if cfg.hierarchy_lesion:
         world = _apply_hierarchy_lesion(world)
+    if cfg.status_lesion:
+        world = _apply_status_lesion(world)
+    if cfg.trust_lesion:
+        world = _apply_trust_lesion(world)
     llm = _resolve_llm(cfg)
     event_agent = EventAgent(seed=cfg.seed, state_events=not cfg.disable_state_events)
     policy = RolePolicyAgent(llm=llm)
@@ -199,6 +245,8 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         "offstage_agents": cfg.offstage_agents,
         "offstage_min_round": 21,
         "hierarchy_lesion": cfg.hierarchy_lesion,
+        "status_lesion": cfg.status_lesion,
+        "trust_lesion": cfg.trust_lesion,
         "population_size": cfg.population_size,
         "population_labs": cfg.population_labs,
     }
@@ -258,6 +306,10 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
             disable_memory=cfg.disable_memory,
             llm_adapter=llm,
         )
+        if cfg.status_lesion:
+            world = _apply_status_lesion(world)
+        if cfg.trust_lesion:
+            world = _apply_trust_lesion(world)
 
         for atype in (ActionType.RUN_EXPERIMENT, ActionType.DEBUG_CODE, ActionType.WRITE_SECTION):
             pass  # project effects applied below

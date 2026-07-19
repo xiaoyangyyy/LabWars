@@ -11,6 +11,7 @@ from src.experiments.conditions import list_conditions
 from src.experiments.report import generate_report
 from src.experiments.runner import run_single
 from src.experiments.scale import run_scale_experiment
+from src.experiments.scientific_protocol import run_scientific_protocol
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -75,6 +76,22 @@ def cmd_scale(args: argparse.Namespace) -> None:
     )
     print(result.summary)
 
+
+
+def cmd_protocol(args: argparse.Namespace) -> None:
+    result = run_scientific_protocol(
+        protocol_id=args.protocol_id,
+        population_sizes=_parse_int_list(args.population_sizes),
+        rounds=args.rounds,
+        seeds=list(range(args.seeds)),
+        conditions=[part.strip() for part in args.conditions.split(",") if part.strip()],
+        policy_mode=args.policy_mode,
+        llm_provider=args.llm_provider,
+        output_dir=args.output,
+        write_output=True,
+    )
+    print(result.summary)
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="labwars-experiments", description="LabWars Part 4 experiment CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -117,6 +134,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_scale.add_argument("--population-labs", type=int, default=None)
     p_scale.add_argument("--output", "-o", default=None)
     p_scale.set_defaults(func=cmd_scale)
+    p_protocol = sub.add_parser("protocol", help="Run repeatable experimental-science protocol")
+    p_protocol.add_argument("--protocol-id", default="agent_social_dynamics_protocol_v1")
+    p_protocol.add_argument("--population-sizes", default="10,50,100,500", help="Comma-separated sizes")
+    p_protocol.add_argument("--rounds", type=int, default=500)
+    p_protocol.add_argument("--seeds", type=int, default=100)
+    p_protocol.add_argument("--conditions", default="baseline,no_memory,no_status,no_trust,no_hierarchy")
+    p_protocol.add_argument("--policy-mode", default="social_physics", choices=["social_physics", "dual_engine", "llm_native"])
+    p_protocol.add_argument("--llm-provider", default="scripted")
+    p_protocol.add_argument("--output", "-o", default=None)
+    p_protocol.set_defaults(func=cmd_protocol)
 
     return parser
 

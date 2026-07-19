@@ -89,3 +89,22 @@ python -m src.experiments scale --population-sizes 14,50,100,200 --rounds 100 --
 ```
 
 The scale layer uses deterministic archetype jitter and hierarchical lab assignment; it does not add new hand-authored conflict scripts. See [`docs/14-Scale-and-Theory-Protocol.md`](14-Scale-and-Theory-Protocol.md).
+
+## 7. Repeatable protocol matrix
+
+The benchmark also exposes a fixed experimental-science matrix:
+
+```text
+population_size = 10, 50, 100, 500
+rounds = 500
+seeds = 100
+conditions = baseline, no_memory, no_status, no_trust, no_hierarchy
+```
+
+Command:
+
+```powershell
+python -m src.experiments protocol --population-sizes 10,50,100,500 --rounds 500 --seeds 100 --conditions baseline,no_memory,no_status,no_trust,no_hierarchy --llm-provider scripted --policy-mode social_physics
+```
+
+The point is to compare each lesion against its same-size baseline, not to interpret one dramatic run.

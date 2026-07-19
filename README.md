@@ -23,6 +23,7 @@
 | [docs/12-Agent-Organization-Simulator-Roadmap.md](docs/12-Agent-Organization-Simulator-Roadmap.md) | roadmap from LabWars to domain-general Agent Organization Simulator |
 | [docs/13-Agent-Social-Dynamics-Benchmark.md](docs/13-Agent-Social-Dynamics-Benchmark.md) | benchmark tasks and social emergence metrics for Agent Social Dynamics |
 | [docs/14-Scale-and-Theory-Protocol.md](docs/14-Scale-and-Theory-Protocol.md) | 50-200 agent scale protocol, 100-1000 round runs, and theory anchors |
+| [docs/15-Theory-Grounded-Agent-Variables.md](docs/15-Theory-Grounded-Agent-Variables.md) | social-science and cognitive-theory grounding for agent variables and lesions |
 
 ## 实施顺序
 
@@ -50,7 +51,7 @@ LabWars/
 ## 当前状态
 
 - [x] 项目文档体系建立（v0.1.0）
-- [x] Part 1-4 全部实现（**120 tests passed**）
+- [x] Part 1-4 全部实现（**123 tests passed**）
 - [x] **Primary action 由 continuous latent action field 生成候选，并融合 LLM candidate scoring 后采样；memory interpretation 与 public/private stance 经 LLM**（OpenAI / Anthropic / Ollama）
 - [x] LLM 不自由覆盖 primary action；它对候选动作做 subjective plausibility scoring，系统融合 field_score 与 llm_score 后采样真实行动
 
@@ -93,6 +94,21 @@ log = run_simulation(SimConfig(
 ))
 ```
 
+
+
+## Experimental science protocol
+
+For reviewer-facing reproducibility, use the standard protocol matrix instead of a single story run:
+
+```powershell
+# Smoke version
+python -m src.experiments protocol --population-sizes 10,20 --rounds 3 --seeds 1 --conditions baseline,no_memory,no_status,no_trust --llm-provider scripted --policy-mode social_physics
+
+# Paper-style protocol
+python -m src.experiments protocol --population-sizes 10,50,100,500 --rounds 500 --seeds 100 --conditions baseline,no_memory,no_status,no_trust,no_hierarchy --llm-provider scripted --policy-mode social_physics
+```
+
+This outputs JSON plus a Markdown summary covering trust dynamics, coalition formation, power concentration, credit inequality, conflict cascades, and organization fragility.
 
 ## Scale benchmark
 
