@@ -92,3 +92,7 @@ The next step is to connect the field to explicit pressure-specific reports:
 - IntegrityRiskField
 
 Those can be implemented as named projections of Social Potential rather than separate unrelated systems.
+
+## 7. Relation to Agent Social State
+
+Social Potential Field is the implemented projection of the formal Agent Social State described in [`docs/11-Agent-Social-State-Model.md`](11-Agent-Social-State-Model.md).

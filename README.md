@@ -19,6 +19,8 @@
 | [docs/08-行为生成与LLM分工审计.md](docs/08-行为生成与LLM分工审计.md) | action field 与 LLM 分工边界 |
 | [docs/09-Agent-MRI-and-Action-Field-Theory.md](docs/09-Agent-MRI-and-Action-Field-Theory.md) | Agent MRI method, action-field theory, pressure fields, and lesion-style experiment roadmap |
 | [docs/10-Social-Potential-Field.md](docs/10-Social-Potential-Field.md) | v0.2 Social Potential Field theory object and ablation protocol |
+| [docs/11-Agent-Social-State-Model.md](docs/11-Agent-Social-State-Model.md) | unified Agent Social State model and fusion policy equations |
+| [docs/12-Agent-Organization-Simulator-Roadmap.md](docs/12-Agent-Organization-Simulator-Roadmap.md) | roadmap from LabWars to domain-general Agent Organization Simulator |
 
 ## 实施顺序
 
@@ -125,7 +127,7 @@ LabWars should not evolve toward "more agents chatting". The sharper direction i
 3. Expand from a 14-agent lab into a hierarchical academic society: department / lab / reviewer / editor / funder / industry partner.
 4. Upgrade reports from trajectory summaries into Agent MRI decompilation reports that explain field score, LLM score, fusion, and selected-action causal chains.
 
-See [`docs/09-Agent-MRI-and-Action-Field-Theory.md`](docs/09-Agent-MRI-and-Action-Field-Theory.md) and [`docs/10-Social-Potential-Field.md`](docs/10-Social-Potential-Field.md).
+See [`docs/09-Agent-MRI-and-Action-Field-Theory.md`](docs/09-Agent-MRI-and-Action-Field-Theory.md), [`docs/10-Social-Potential-Field.md`](docs/10-Social-Potential-Field.md), [`docs/11-Agent-Social-State-Model.md`](docs/11-Agent-Social-State-Model.md), and [`docs/12-Agent-Organization-Simulator-Roadmap.md`](docs/12-Agent-Organization-Simulator-Roadmap.md).
 
 ## Action Field 与 LLM 分工
 

@@ -56,6 +56,7 @@ class SimConfig:
     enable_llm_action_scoring: bool = True
     cognitive_policy_lambda: float | None = 0.35
     llm_action_score_mix: float = 0.35
+    hierarchy_lesion: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         llm_cfg = load_llm_config()
@@ -75,6 +76,7 @@ class SimConfig:
             "enable_llm_action_scoring": self.enable_llm_action_scoring,
             "cognitive_policy_lambda": self.cognitive_policy_lambda,
             "llm_action_score_mix": self.llm_action_score_mix,
+            "hierarchy_lesion": self.hierarchy_lesion,
             "llm_provider": self.llm_provider or llm_cfg.get("provider"),
             "llm_model": self.llm_model or llm_cfg.get("model"),
         }
@@ -105,6 +107,29 @@ def _filter_world(world: WorldState, config: SimConfig) -> WorldState:
     w.relationships = [e for e in w.relationships if e.source in keep and e.target in keep]
     return w
 
+
+
+def _apply_hierarchy_lesion(world: WorldState) -> WorldState:
+    """Flatten PI-centered authority while preserving the same event stream.
+
+    This is a mechanism lesion for organization-level ablations: it lowers
+    authority dependence, PI dependency, and funding pressure while increasing
+    alternative access. It deliberately avoids deleting agents or events.
+    """
+    w = copy.deepcopy(world)
+    for agent in w.agents.values():
+        agent.personality.authority_dependence = min(agent.personality.authority_dependence, 0.18)
+        agent.resources.pi_access = max(agent.resources.pi_access, 0.72)
+        agent.resources.external_network = max(agent.resources.external_network, 0.68)
+        agent.beliefs.pi_fairness = max(agent.beliefs.pi_fairness, 0.52)
+    for edge in w.relationships:
+        if edge.target == "pi" or edge.source == "pi":
+            edge.dependency = min(edge.dependency, 0.18)
+            edge.obligation = min(edge.obligation, 0.25)
+            edge.information_access = max(edge.information_access, 0.58)
+    w.project.project.funding_pressure = min(w.project.project.funding_pressure, 0.20)
+    w.world_config["hierarchy_lesion"] = True
+    return w
 
 def _shuffle_memory_refs(world: WorldState, seed: int) -> None:
     rng = random.Random(seed)
@@ -149,6 +174,8 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
     log = RunLog(run_id=run_id, config=cfg.to_dict())
 
     world = _filter_world(load_world(), cfg)
+    if cfg.hierarchy_lesion:
+        world = _apply_hierarchy_lesion(world)
     llm = _resolve_llm(cfg)
     event_agent = EventAgent(seed=cfg.seed, state_events=not cfg.disable_state_events)
     policy = RolePolicyAgent(llm=llm)
@@ -164,6 +191,7 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         "active_agents": cfg.active_agents,
         "offstage_agents": cfg.offstage_agents,
         "offstage_min_round": 21,
+        "hierarchy_lesion": cfg.hierarchy_lesion,
     }
 
     for round_num in range(1, cfg.max_rounds + 1):

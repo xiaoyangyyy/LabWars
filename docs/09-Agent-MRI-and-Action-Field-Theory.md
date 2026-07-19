@@ -203,6 +203,7 @@ A strong framing is:
 
 - Keep CLI and LLM configuration reproducible across providers.
 - Use Social Potential Field as the v0.2 core theory object.
+- Formalize Agent Social State `z_i(t)` and the organization-level ablation matrix.
 - Add explicit pressure-field decomposition to selected actions.
 - Add hierarchical academic society configs.
 - Upgrade generated reports from trajectory summaries to mechanism decompilation reports.
