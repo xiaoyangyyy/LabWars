@@ -12,6 +12,7 @@ from src.experiments.report import generate_report
 from src.experiments.runner import run_single
 from src.experiments.scale import run_scale_experiment
 from src.experiments.scientific_protocol import run_scientific_protocol
+from src.experiments.policy_protocol import run_policy_comparison_protocol
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -92,6 +93,21 @@ def cmd_protocol(args: argparse.Namespace) -> None:
     )
     print(result.summary)
 
+
+
+def cmd_policy_compare(args: argparse.Namespace) -> None:
+    result = run_policy_comparison_protocol(
+        population_size=args.population_size,
+        rounds=args.rounds,
+        seeds=list(range(args.seeds)),
+        regimes=[part.strip() for part in args.regimes.split(",") if part.strip()],
+        llm_provider=args.llm_provider,
+        sampled_top_k=args.sampled_top_k,
+        output_dir=args.output,
+        write_output=True,
+    )
+    print(result.summary)
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="labwars-experiments", description="LabWars Part 4 experiment CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -144,6 +160,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_protocol.add_argument("--llm-provider", default="scripted")
     p_protocol.add_argument("--output", "-o", default=None)
     p_protocol.set_defaults(func=cmd_protocol)
+    p_policy = sub.add_parser("policy-compare", help="Compare rule, LLM-native, hybrid, and sampled-hybrid policies")
+    p_policy.add_argument("--population-size", type=int, default=50)
+    p_policy.add_argument("--rounds", type=int, default=60)
+    p_policy.add_argument("--seeds", type=int, default=3)
+    p_policy.add_argument("--regimes", default="rule_baseline,llm_native,hybrid,hybrid_sampled")
+    p_policy.add_argument("--llm-provider", default="scripted")
+    p_policy.add_argument("--sampled-top-k", type=int, default=20)
+    p_policy.add_argument("--output", "-o", default=None)
+    p_policy.set_defaults(func=cmd_policy_compare)
 
     return parser
 

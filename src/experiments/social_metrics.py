@@ -133,6 +133,129 @@ def organization_fragility_index(log: RunLog) -> float:
     return round(_safe_mean(components), 4)
 
 
+
+def _linear_regression(xs: list[float], ys: list[float]) -> tuple[float, float]:
+    if len(xs) < 2 or len(xs) != len(ys):
+        return 0.0, 0.0
+    mx = _safe_mean(xs)
+    my = _safe_mean(ys)
+    denom = sum((x - mx) ** 2 for x in xs)
+    if denom <= 1e-12:
+        return 0.0, 0.0
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / denom
+    intercept = my - slope * mx
+    ss_tot = sum((y - my) ** 2 for y in ys)
+    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(xs, ys))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+    return slope, max(0.0, min(1.0, r2))
+
+
+def _power_law_fit(values: list[float]) -> dict[str, float]:
+    xs = sorted([float(v) for v in values if float(v) > 0], reverse=True)
+    if len(xs) < 4:
+        return {"alpha": 0.0, "r2": 0.0}
+    ccdf_x: list[float] = []
+    ccdf_y: list[float] = []
+    n = len(xs)
+    for idx, value in enumerate(sorted(xs)):
+        tail = sum(1 for item in xs if item >= value) / n
+        if value > 0 and tail > 0:
+            ccdf_x.append(math.log(value))
+            ccdf_y.append(math.log(tail))
+    slope, r2 = _linear_regression(ccdf_x, ccdf_y)
+    return {"alpha": round(max(0.0, -slope), 4), "r2": round(r2, 4)}
+
+
+def _target_power_values(log: RunLog) -> list[float]:
+    counts: dict[str, float] = defaultdict(float)
+    for action in log.actions:
+        target = str(action.get("target") or action.get("selected_action", {}).get("target") or "unknown")
+        counts[target] += 1.0 + float(action.get("intensity", 0.0))
+    return list(counts.values())
+
+
+def power_law_alpha(log: RunLog) -> float:
+    return _power_law_fit(_target_power_values(log))["alpha"]
+
+
+def power_law_fit_r2(log: RunLog) -> float:
+    return _power_law_fit(_target_power_values(log))["r2"]
+
+
+def network_modularity_q(log: RunLog) -> float:
+    final = log.round_records[-1].get("metrics", {}) if log.round_records else {}
+    edges: list[tuple[str, str, float]] = []
+    nodes: set[str] = set()
+    for key, value in final.items():
+        if not key.startswith("trust_"):
+            continue
+        rest = key[len("trust_"):]
+        if "_" not in rest:
+            continue
+        src, tgt = rest.rsplit("_", 1)
+        weight = max(0.0, float(value) - 0.5)
+        if weight <= 0:
+            continue
+        edges.append((src, tgt, weight))
+        nodes.update([src, tgt])
+    if len(nodes) < 3 or not edges:
+        return 0.0
+    # Greedy proxy: partition by each node's strongest trusted target.
+    strongest: dict[str, str] = {}
+    for src, tgt, weight in edges:
+        if weight > float(strongest.get(src + ":w", -1.0)):
+            strongest[src] = tgt
+            strongest[src + ":w"] = str(weight)
+    communities = {node: strongest.get(node, node) for node in nodes}
+    m = sum(w for _, _, w in edges)
+    out_strength: dict[str, float] = defaultdict(float)
+    in_strength: dict[str, float] = defaultdict(float)
+    for src, tgt, weight in edges:
+        out_strength[src] += weight
+        in_strength[tgt] += weight
+    q = 0.0
+    for src, tgt, weight in edges:
+        if communities.get(src) == communities.get(tgt):
+            q += weight - (out_strength[src] * in_strength[tgt] / max(m, 1e-12))
+    return round(max(0.0, min(1.0, q / max(m, 1e-12))), 4)
+
+
+def _cascade_sizes(log: RunLog) -> list[int]:
+    conflict_rounds = sorted({
+        int(a.get("round", 0))
+        for a in log.actions
+        if a.get("type") in PROTEST_ACTIONS or a.get("type") in REBEL_ACTIONS or "authorship" in str(a.get("type", ""))
+    })
+    if not conflict_rounds:
+        return []
+    sizes: list[int] = []
+    current = 1
+    for prev, cur in zip(conflict_rounds, conflict_rounds[1:]):
+        if cur == prev + 1:
+            current += 1
+        else:
+            sizes.append(current)
+            current = 1
+    sizes.append(current)
+    return sizes
+
+
+def cascade_tail_alpha(log: RunLog) -> float:
+    return _power_law_fit([float(v) for v in _cascade_sizes(log)])["alpha"]
+
+
+def cascade_tail_r2(log: RunLog) -> float:
+    return _power_law_fit([float(v) for v in _cascade_sizes(log)])["r2"]
+
+
+def emergent_pattern_score(log: RunLog) -> float:
+    parts = [
+        power_law_fit_r2(log),
+        network_modularity_q(log),
+        cascade_tail_r2(log),
+        min(1.0, conflict_cascade_length(log) / 10.0),
+    ]
+    return round(_safe_mean(parts), 4)
 def compute_social_emergence_metrics(log: RunLog) -> dict[str, float]:
     """Compute benchmark-level social emergence metrics from a completed run."""
     return {
@@ -144,4 +267,10 @@ def compute_social_emergence_metrics(log: RunLog) -> dict[str, float]:
         "credit_attribution_gap": credit_attribution_gap(log),
         "social_state_volatility": social_state_volatility(log),
         "organization_fragility_index": organization_fragility_index(log),
+        "power_law_alpha": power_law_alpha(log),
+        "power_law_fit_r2": power_law_fit_r2(log),
+        "network_modularity_q": network_modularity_q(log),
+        "cascade_tail_alpha": cascade_tail_alpha(log),
+        "cascade_tail_r2": cascade_tail_r2(log),
+        "emergent_pattern_score": emergent_pattern_score(log),
     }

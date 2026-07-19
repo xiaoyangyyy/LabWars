@@ -24,6 +24,7 @@
 | [docs/13-Agent-Social-Dynamics-Benchmark.md](docs/13-Agent-Social-Dynamics-Benchmark.md) | benchmark tasks and social emergence metrics for Agent Social Dynamics |
 | [docs/14-Scale-and-Theory-Protocol.md](docs/14-Scale-and-Theory-Protocol.md) | 50-200 agent scale protocol, 100-1000 round runs, and theory anchors |
 | [docs/15-Theory-Grounded-Agent-Variables.md](docs/15-Theory-Grounded-Agent-Variables.md) | social-science and cognitive-theory grounding for agent variables and lesions |
+| [docs/16-Emergence-and-Cognitive-Sampling.md](docs/16-Emergence-and-Cognitive-Sampling.md) | emergence distribution metrics, policy-regime comparison, and top-k LLM cognition |
 
 ## 实施顺序
 
@@ -51,7 +52,7 @@ LabWars/
 ## 当前状态
 
 - [x] 项目文档体系建立（v0.1.0）
-- [x] Part 1-4 全部实现（**123 tests passed**）
+- [x] Part 1-4 全部实现（**126 tests passed**）
 - [x] **Primary action 由 continuous latent action field 生成候选，并融合 LLM candidate scoring 后采样；memory interpretation 与 public/private stance 经 LLM**（OpenAI / Anthropic / Ollama）
 - [x] LLM 不自由覆盖 primary action；它对候选动作做 subjective plausibility scoring，系统融合 field_score 与 llm_score 后采样真实行动
 

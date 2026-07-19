@@ -32,6 +32,12 @@ PROTOCOL_METRICS = [
     "reputation_volatility",
     "social_state_volatility",
     "organization_fragility_index",
+    "power_law_alpha",
+    "power_law_fit_r2",
+    "network_modularity_q",
+    "cascade_tail_alpha",
+    "cascade_tail_r2",
+    "emergent_pattern_score",
     "authorship_dispute_index",
     "career_hostage_index",
 ]

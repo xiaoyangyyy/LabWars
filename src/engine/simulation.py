@@ -62,6 +62,8 @@ class SimConfig:
     trust_lesion: bool = False
     population_size: int | None = None
     population_labs: int | None = None
+    cognitive_sampling_top_k: int | None = None
+    cognitive_sampling_threshold: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         llm_cfg = load_llm_config()
@@ -86,6 +88,8 @@ class SimConfig:
             "trust_lesion": self.trust_lesion,
             "population_size": self.population_size,
             "population_labs": self.population_labs,
+            "cognitive_sampling_top_k": self.cognitive_sampling_top_k,
+            "cognitive_sampling_threshold": self.cognitive_sampling_threshold,
             "llm_provider": self.llm_provider or llm_cfg.get("provider"),
             "llm_model": self.llm_model or llm_cfg.get("model"),
         }
@@ -249,6 +253,8 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         "trust_lesion": cfg.trust_lesion,
         "population_size": cfg.population_size,
         "population_labs": cfg.population_labs,
+        "cognitive_sampling_top_k": cfg.cognitive_sampling_top_k,
+        "cognitive_sampling_threshold": cfg.cognitive_sampling_threshold,
     }
 
     for round_num in range(1, cfg.max_rounds + 1):

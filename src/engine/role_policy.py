@@ -1,4 +1,4 @@
-﻿"""Role Policy Agent - LLM candidate scoring plus constrained stance rendering."""
+"""Role Policy Agent - LLM candidate scoring plus constrained stance rendering."""
 
 from __future__ import annotations
 
@@ -124,6 +124,29 @@ def _coerce_score(value: Any) -> float:
 
 
 
+
+def _scripted_render_action(agent: Agent, event: EventAtom, selected_payload: dict[str, Any]) -> dict[str, Any]:
+    """Render a selected field action without an LLM call for unsampled agents."""
+    action_type = str(selected_payload.get("type", "document_contribution"))
+    target = str(selected_payload.get("target") or "project")
+    return {
+        "agent": agent.id,
+        "type": action_type,
+        "target": target,
+        "intensity": round(float(selected_payload.get("intensity", 0.5)), 4),
+        "communication_action": {
+            "type": "share_result",
+            "target": target,
+            "content_summary": f"{agent.id} follows field-selected {action_type} under {event.type}",
+        },
+        "public_position": {"statement_type": "neutral", "authorship_claim": "any_authorship"},
+        "private_intent": {
+            "goal": "follow_social_field",
+            "strategy": action_type,
+            "trust_pi": agent.beliefs.pi_fairness,
+        },
+        "llm_raw": {"source": "scripted_unsampled_render"},
+    }
 def _normalize_probability_payloads(payloads: list[dict[str, Any]], key: str = "fused_tendency") -> list[dict[str, Any]]:
     if not payloads:
         return []
@@ -135,6 +158,45 @@ def _normalize_probability_payloads(payloads: list[dict[str, Any]], key: str = "
         out.append(copied)
     return out
 
+
+def _cognitive_sampling_scores(
+    world: WorldState,
+    event: EventAtom,
+    recalls: dict[str, RecallResult],
+    config: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    top_k = config.get("cognitive_sampling_top_k")
+    if top_k is None:
+        return {}
+    threshold = float(config.get("cognitive_sampling_threshold", 0.0) or 0.0)
+    rows: list[dict[str, Any]] = []
+    for agent_id, agent in world.agents.items():
+        if not is_agent_active(agent_id, event.round, config):
+            continue
+        potential = compute_social_potential(world, agent, event, recalls.get(agent_id))
+        dims = potential.dimensions
+        score = max(0.0, min(1.0,
+            0.34 * float(dims.get("uncertainty", 0.0))
+            + 0.24 * float(dims.get("memory_pressure", 0.0))
+            + 0.18 * float(dims.get("trust_deficit", 0.0))
+            + 0.14 * float(dims.get("power_constraint", 0.0))
+            + 0.10 * float(potential.total_pressure)
+        ))
+        rows.append({"agent": agent_id, "score": round(score, 4), "dimensions": dims})
+    rows.sort(key=lambda item: (float(item["score"]), str(item["agent"])), reverse=True)
+    selected = {item["agent"] for item in rows[: max(0, int(top_k))] if float(item["score"]) >= threshold}
+    return {
+        item["agent"]: {
+            "enabled": True,
+            "sampled": item["agent"] in selected,
+            "score": item["score"],
+            "top_k": int(top_k),
+            "threshold": threshold,
+            "rank": idx + 1,
+            "dimensions": item["dimensions"],
+        }
+        for idx, item in enumerate(rows)
+    }
 class RolePolicyAgent:
     def __init__(self, llm: LLMAdapter, max_retries: int = 3) -> None:
         self.llm = llm
@@ -317,6 +379,11 @@ class RolePolicyAgent:
 
         seed = int(config.get("seed", 0) or 0)
         policy_mode = str(config.get("policy_mode", "dual_engine"))
+        sampling_audit = config.get("cognitive_sampling", {}) or {}
+        llm_sampled = bool(sampling_audit.get("sampled", True))
+        local_config = dict(config)
+        if not llm_sampled:
+            local_config["enable_llm_action_scoring"] = False
         candidates = generate_action_candidates(
             agent,
             event,
@@ -327,7 +394,7 @@ class RolePolicyAgent:
             seed=seed,
         )
         base_payload = [c.to_dict() for c in candidates]
-        if policy_mode == "llm_native":
+        if policy_mode == "llm_native" and llm_sampled:
             try:
                 candidate_payload, scoring_audit = self._generate_llm_native_candidates(
                     agent,
@@ -350,7 +417,7 @@ class RolePolicyAgent:
                 world,
                 recall,
                 base_payload,
-                config,
+                local_config,
             )
             scoring_audit["policy_mode"] = policy_mode
         selected_payload = _sample_payload(
@@ -370,6 +437,21 @@ class RolePolicyAgent:
             )
             for dim in SOCIAL_POTENTIAL_DIMENSIONS
         }
+
+        if not llm_sampled:
+            act = _scripted_render_action(agent, event, selected_payload)
+            private = act.setdefault("private_intent", {})
+            private.setdefault("private_motives", selected_payload.get("motives", {}))
+            act["action_candidates"] = candidate_payload
+            act["selected_action"] = selected_payload
+            act["private_motives"] = selected_payload.get("motives", {})
+            act["social_potential"] = social_potential.to_dict()
+            act["selected_social_pressure"] = round(selected_social_pressure, 4)
+            act["selected_social_pressure_decomposition"] = social_potential.action_decomposition(str(selected_payload.get("type", "")))
+            act["social_potential_ablation"] = social_potential_ablation
+            act["llm_action_scoring"] = {**scoring_audit, "cognitive_sampling": sampling_audit, "source": scoring_audit.get("source", "field_only_unsampled")}
+            act["cognitive_sampling"] = sampling_audit
+            return act
 
         last_error = ""
         retry_note = ""
@@ -406,7 +488,8 @@ class RolePolicyAgent:
                     str(selected_payload.get("type", ""))
                 )
                 act["social_potential_ablation"] = social_potential_ablation
-                act["llm_action_scoring"] = scoring_audit
+                act["llm_action_scoring"] = {**scoring_audit, "cognitive_sampling": sampling_audit}
+                act["cognitive_sampling"] = sampling_audit
                 return act
             except (LLMError, KeyError, TypeError, ValueError) as exc:
                 last_error = str(exc)
@@ -422,8 +505,12 @@ class RolePolicyAgent:
         config: dict[str, Any],
     ) -> list[dict[str, Any]]:
         actions: list[dict[str, Any]] = []
+        sampling = _cognitive_sampling_scores(world, event, recalls, config)
         for agent_id, agent in world.agents.items():
-            act = self.decide(agent, event, world, recalls.get(agent_id), config)
+            local_config = dict(config)
+            if sampling:
+                local_config["cognitive_sampling"] = sampling.get(agent_id, {"enabled": True, "sampled": False})
+            act = self.decide(agent, event, world, recalls.get(agent_id), local_config)
             if act:
                 actions.append(act)
         return actions

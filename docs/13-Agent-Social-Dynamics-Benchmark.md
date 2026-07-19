@@ -108,3 +108,26 @@ python -m src.experiments protocol --population-sizes 10,50,100,500 --rounds 500
 ```
 
 The point is to compare each lesion against its same-size baseline, not to interpret one dramatic run.
+## 8. Emergence-pattern validation
+
+Outcome means are not enough. LabWars reports distributional emergence metrics:
+
+- `power_law_alpha` and `power_law_fit_r2` for heavy-tailed power/attention concentration;
+- `network_modularity_q` for alliance-like trust clustering;
+- `cascade_tail_alpha` and `cascade_tail_r2` for conflict cascade tails;
+- `emergent_pattern_score` as a compact joint signature.
+
+## 9. Policy-regime comparison
+
+Use `policy-compare` to compare:
+
+- `rule_baseline`: social physics only;
+- `llm_native`: LLM proposes candidate actions;
+- `hybrid`: social field plus LLM candidate scoring;
+- `hybrid_sampled`: hybrid with top-k cognitive sampling.
+
+```powershell
+python -m src.experiments policy-compare --population-size 50 --rounds 60 --seeds 3 --regimes rule_baseline,llm_native,hybrid,hybrid_sampled --llm-provider scripted --sampled-top-k 20
+```
+
+See [`docs/16-Emergence-and-Cognitive-Sampling.md`](16-Emergence-and-Cognitive-Sampling.md).
