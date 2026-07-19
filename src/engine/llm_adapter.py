@@ -81,6 +81,7 @@ class OpenAIAdapter(LLMAdapter):
         temperature: float = 0.7,
         max_tokens: int = 1024,
         api_key: str | None = None,
+        api_key_env: str = "OPENAI_API_KEY",
         base_url: str | None = None,
         request_delay_sec: float = 0.0,
         top_p: float | None = None,
@@ -88,9 +89,9 @@ class OpenAIAdapter(LLMAdapter):
     ) -> None:
         from openai import OpenAI
 
-        key = api_key or os.environ.get("OPENAI_API_KEY")
+        key = api_key or os.environ.get(api_key_env)
         if not key:
-            raise LLMError("OPENAI_API_KEY not set")
+            raise LLMError(f"{api_key_env} not set")
         kwargs: dict[str, Any] = {"api_key": key, "timeout": 180.0}
         if base_url:
             kwargs["base_url"] = base_url
@@ -215,7 +216,10 @@ class OllamaAdapter(LLMAdapter):
 
 
 def load_llm_config(path: Path | None = None) -> dict[str, Any]:
-    p = path or LLM_CONFIG_PATH
+    env_path = os.environ.get("LABWARS_LLM_CONFIG")
+    p = path or (Path(env_path) if env_path else LLM_CONFIG_PATH)
+    if not p.is_absolute():
+        p = PROJECT_ROOT / p
     if not p.exists():
         return {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.7, "max_tokens": 1024}
     return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
@@ -248,6 +252,7 @@ def get_adapter(
             temperature=temp,
             max_tokens=tokens,
             api_key=api_key or os.environ.get(env_key),
+            api_key_env=env_key,
             base_url=url,
             request_delay_sec=delay,
             top_p=float(tp) if tp is not None else None,

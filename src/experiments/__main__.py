@@ -95,7 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.condition is None and hasattr(args, "experiment"):
+    if getattr(args, "condition", None) is None and hasattr(args, "experiment"):
         try:
             args.condition = list_conditions(args.experiment)[0]
         except (ValueError, KeyError):

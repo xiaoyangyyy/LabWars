@@ -45,6 +45,9 @@ def aggregate_experiment(
         val = float(row.get(outcome, 0))
         by_condition.setdefault(cid, []).append(val)
 
+    if not by_condition:
+        raise ValueError(f"No rows to aggregate for experiment {exp}; run batch with at least one seed.")
+
     baseline = baseline_condition or sorted(by_condition.keys())[0]
     summary: dict[str, Any] = {
         "experiment_id": exp,
@@ -154,6 +157,10 @@ def write_aggregate_report(
 ) -> Path:
     out_dir = Path(output_dir) if output_dir else DEFAULT_OUTPUT
     out_dir.mkdir(parents=True, exist_ok=True)
+    if batch_path is None and output_dir is not None:
+        candidate = out_dir / f"batch_{experiment_id.upper()}_summary.json"
+        if candidate.exists():
+            batch_path = candidate
     if batch_path:
         summary = aggregate_experiment(experiment_id, batch_path=batch_path)
     else:

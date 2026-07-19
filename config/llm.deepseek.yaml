@@ -1,0 +1,12 @@
+# DeepSeek OpenAI-compatible configuration for LabWars.
+# Do not write the API key here. Set DEEPSEEK_API_KEY in your shell.
+
+provider: openai
+base_url: https://api.deepseek.com
+model: deepseek-v4-flash
+temperature: 0.65
+top_p: 0.88
+max_tokens: 1024
+api_key_env: DEEPSEEK_API_KEY
+request_delay_sec: 3.0
+max_retries: 12

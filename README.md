@@ -17,6 +17,7 @@
 | [docs/06-主动传递机制详解.md](docs/06-主动传递机制详解.md) | 事件/信息如何主动传递 |
 | [docs/07-记忆系统设计详解.md](docs/07-记忆系统设计详解.md) | 主观记忆系统设计 |
 | [docs/08-行为生成与LLM分工审计.md](docs/08-行为生成与LLM分工审计.md) | action field 与 LLM 分工边界 |
+| [docs/09-Agent-MRI-and-Action-Field-Theory.md](docs/09-Agent-MRI-and-Action-Field-Theory.md) | Agent MRI method, action-field theory, pressure fields, and lesion-style experiment roadmap |
 
 ## 实施顺序
 
@@ -48,30 +49,33 @@ LabWars/
 - [x] **Primary action 由 continuous latent action field 生成候选，并融合 LLM candidate scoring 后采样；memory interpretation 与 public/private stance 经 LLM**（OpenAI / Anthropic / Ollama）
 - [x] LLM 不自由覆盖 primary action；它对候选动作做 subjective plausibility scoring，系统融合 field_score 与 llm_score 后采样真实行动
 
-## LLM 配置（候选评分 + 解释层）
+## LLM configuration: candidate scoring + interpretation layer
 
-仿真先由 continuous latent action field 生成候选动作，再由 LLM 对候选动作进行 subjective plausibility scoring；系统融合 field_score 与 llm_score 后采样 primary action。LLM 同时负责记忆解释、公开立场、私下意图和话术生成。配置见 [`config/llm.yaml`](config/llm.yaml)：
+The simulator first uses a continuous latent action field to generate candidate actions, then asks an LLM to score the subjective plausibility of each candidate. The final primary action is sampled from a fusion of field_score and llm_score. The LLM also writes memory interpretations, public positions, private intents, and constrained utterances.
 
-```yaml
-# 智算 OpenAI 兼容（已验证 ai.azya.top）
-provider: openai
-base_url: https://ai.azya.top/v1
-model: qwen3.5
-temperature: 0.7
-request_delay_sec: 1.1   # 避免 429 限速（约 1 次/秒）
-api_key_env: OPENAI_API_KEY
-```
+Default configuration lives in [`config/llm.yaml`](config/llm.yaml). Never write API keys into config files; inject them through environment variables.
+
+DeepSeek example configuration lives in [`config/llm.deepseek.yaml`](config/llm.deepseek.yaml):
 
 ```powershell
-# Windows
-$env:OPENAI_API_KEY="sk-xxx"
-python scripts/test_zhisuan_api.py          # 连通性自检
+# Windows / PowerShell
+$env:DEEPSEEK_API_KEY = Read-Host "Paste DEEPSEEK_API_KEY"
+$env:LABWARS_LLM_CONFIG = "config/llm.deepseek.yaml"
+python -c "from src.engine.llm_adapter import get_adapter; llm=get_adapter(); print(llm.complete_json('Return JSON only.', 'Return exactly: {\"ok\": true}'))"
 python -m src.experiments run -e A -c A2 --seed 42
 ```
 
-其他 provider：`anthropic` / 本地 `ollama` — 见 `config/llm.yaml` 注释。
+DeepSeek-compatible full run:
 
-代码注入（自定义 backend）：
+```powershell
+.\scripts\run_full_deepseek.ps1 -Seeds 1
+# 30-seed matrix:
+.\scripts\run_full_deepseek.ps1 -ThirtySeedMatrix
+```
+
+Other providers are supported through `openai`, `anthropic`, and local `ollama`; see comments in `config/llm.yaml`.
+
+Code-level injection remains available:
 
 ```python
 from src.engine import SimConfig, run_simulation, get_adapter
@@ -110,6 +114,17 @@ python -m src.experiments report -e A -c A2 --seed 42
 python -m src.experiments aggregate -e A
 ```
 
+
+## Next-stage roadmap
+
+LabWars should not evolve toward "more agents chatting". The sharper direction is interpretable mechanisms, intervention experiments, and social pressure fields.
+
+1. Make `AuthorshipPressureField`, `TrustCollapseField`, `AuthorityComplianceField`, and `IntegrityRiskField` explicit, with per-action decomposition.
+2. Upgrade experiments A-D/V into lesion-style protocols: memory lesion, hierarchy ablation, credit visibility, false evidence, and policy-mode comparison.
+3. Expand from a 14-agent lab into a hierarchical academic society: department / lab / reviewer / editor / funder / industry partner.
+4. Upgrade reports from trajectory summaries into Agent MRI decompilation reports that explain field score, LLM score, fusion, and selected-action causal chains.
+
+See [`docs/09-Agent-MRI-and-Action-Field-Theory.md`](docs/09-Agent-MRI-and-Action-Field-Theory.md).
 
 ## Action Field 与 LLM 分工
 

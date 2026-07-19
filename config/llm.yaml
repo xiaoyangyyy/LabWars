@@ -1,9 +1,21 @@
-﻿provider: openai
-base_url: https://api.deepseek.com
-model: deepseek-v4-flash
+# LabWars default LLM configuration.
+# Keep secrets out of this file; inject API keys through environment variables.
+# For DeepSeek, use config/llm.deepseek.yaml or set LABWARS_LLM_CONFIG=config/llm.deepseek.yaml.
+
+provider: openai
+model: gpt-4o-mini
 temperature: 0.65
 top_p: 0.88
 max_tokens: 1024
-api_key_env: DEEPSEEK_API_KEY
-request_delay_sec: 3.0
-max_retries: 12
+api_key_env: OPENAI_API_KEY
+request_delay_sec: 1.1
+max_retries: 8
+
+# Other provider examples:
+# provider: anthropic
+# model: claude-3-5-haiku-20241022
+# api_key_env: ANTHROPIC_API_KEY
+
+# provider: ollama
+# model: llama3.2
+# base_url: http://localhost:11434
