@@ -1,10 +1,11 @@
-﻿"""Institutional power surfaces for PI-mediated academic conflict."""
+"""Institutional power surfaces for PI-mediated academic conflict."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from src.world.models import Agent, WorldState
+from src.world.models import Agent, AgentRole, WorldState
+from src.world.organization import authority_ids, primary_authority
 
 from .math_utils import clamp, logistic_gate, normalize_simplex, softplus
 
@@ -19,7 +20,8 @@ CONTROL_WEIGHTS = {
 
 def pi_control_surface(world: WorldState) -> dict[str, float]:
     """Continuous PI control over career, resources, and authorship arbitration."""
-    pi = world.agents.get("pi")
+    authority = primary_authority(world)
+    pi = world.agents.get(authority) if authority else None
     project = world.project.project
     authority = pi.personality.ambition if pi else 0.65
     cooperation = pi.personality.cooperation if pi else 0.55
@@ -70,7 +72,7 @@ def pi_preference_distribution(world: WorldState, candidate_ids: list[str]) -> d
             + 0.20 * agent.personality.ambition
         )
         pressure_fit = softplus(manageability * veto + delivery * resource + funding * agent.resources.pi_access)
-        if aid == "pi":
+        if world.agents[aid].role == AgentRole.PI:
             pressure_fit += 0.20 * veto
         prefs[aid] = pressure_fit
     return normalize_simplex(prefs)
@@ -78,7 +80,8 @@ def pi_preference_distribution(world: WorldState, candidate_ids: list[str]) -> d
 
 def career_hostage_index(world: WorldState) -> float:
     """How much internal agents depend on PI-controlled career surfaces."""
-    internal = [aid for aid in world.world_config.get("internal_agents", []) if aid in world.agents and aid != "pi"]
+    authorities = set(authority_ids(world))
+    internal = [aid for aid in world.world_config.get("internal_agents", []) if aid in world.agents and aid not in authorities]
     if not internal:
         return 0.0
     vals = [pi_control_pressure(world, world.agents[aid]) for aid in internal]

@@ -10,7 +10,9 @@ from typing import Any
 import yaml
 
 from src.cognition.math_utils import clamp
-from src.world.models import Agent, EventAtom, ObjectiveFact, WorldState
+from src.engine.story_cast import remap_agent_id
+from src.world.models import EventAtom, ObjectiveFact, WorldState
+from src.world.organization import EventCast, resolve_event_cast
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = PROJECT_ROOT / "config"
@@ -66,7 +68,11 @@ def _set_nested(obj: dict[str, Any], path: str, value: Any) -> None:
     cur[parts[-1]] = value
 
 
-def apply_event_override(event: EventAtom, intervention: Intervention) -> EventAtom:
+def apply_event_override(
+    event: EventAtom,
+    intervention: Intervention,
+    cast: EventCast | None = None,
+) -> EventAtom:
     ev = copy.deepcopy(event)
     for key, value in intervention.override.items():
         if key == "framing":
@@ -109,8 +115,10 @@ def apply_event_override(event: EventAtom, intervention: Intervention) -> EventA
     elif intervention.variant == "no_rival":
         ev.memory_salience = 0.01
     elif intervention.variant == "phd_b_rebuttal_request":
-        ev.source = "phd_b"
-        ev.targets = ["phd_a", "phd_b", "project"]
+        idea = remap_agent_id("phd_a", cast) or "phd_a"
+        experimenter = remap_agent_id("phd_b", cast) or "phd_b"
+        ev.source = experimenter
+        ev.targets = [idea, experimenter, "project"]
         ev.type = "team_meeting"
         ev.objective_fact = ObjectiveFact(
             raw_statement="PhD-B asked PhD-A to help write the rebuttal.",
@@ -119,9 +127,17 @@ def apply_event_override(event: EventAtom, intervention: Intervention) -> EventA
         ev.framing = "neutral"
         ev.memory_salience = 0.70
     elif intervention.variant == "honor_promise_draft":
-        ev.payload["author_order"] = [
-            "phd_a", "phd_b", "postdoc_d", "master_c", "engineer_e", "collaborator_g", "pi",
+        order = [
+            remap_agent_id(aid, cast) or aid
+            for aid in ("phd_a", "phd_b", "postdoc_d", "master_c", "engineer_e", "collaborator_g", "pi")
         ]
+        seen: set[str] = set()
+        unique_order: list[str] = []
+        for aid in order:
+            if aid not in seen:
+                seen.add(aid)
+                unique_order.append(aid)
+        ev.payload["author_order"] = unique_order
         ev.payload["co_first"] = []
         ev.payload["draft_severity"] = "honored"
         ev.objective_fact = ObjectiveFact(
@@ -133,14 +149,25 @@ def apply_event_override(event: EventAtom, intervention: Intervention) -> EventA
     return ev
 
 
-def apply_world_intervention(world: WorldState, intervention: Intervention) -> int | None:
+def apply_world_intervention(
+    world: WorldState,
+    intervention: Intervention,
+    cast: EventCast | None = None,
+) -> int | None:
     if intervention.type == "memory_intervention":
-        return apply_memory_intervention(world, intervention)
+        return apply_memory_intervention(world, intervention, cast)
     return None
 
 
-def apply_memory_intervention(world: WorldState, intervention: Intervention) -> int:
-    agent_id = intervention.target_agent or "phd_a"
+def apply_memory_intervention(
+    world: WorldState,
+    intervention: Intervention,
+    cast: EventCast | None = None,
+) -> int:
+    live_cast = cast or resolve_event_cast(world)
+    agent_id = remap_agent_id(intervention.target_agent or "phd_a", live_cast) or "phd_a"
+    pi_id = remap_agent_id("pi", live_cast) or "pi"
+    rival_id = remap_agent_id("phd_b", live_cast) or "phd_b"
     agent = world.agents.get(agent_id)
     if not agent:
         return 0
@@ -174,7 +201,7 @@ def apply_memory_intervention(world: WorldState, intervention: Intervention) -> 
             agent.emotion.anxiety = clamp(agent.emotion.anxiety - 0.06)
             agent.emotion.loyalty = clamp(agent.emotion.loyalty + 0.05)
             for edge in world.relationships:
-                if edge.source == agent_id and edge.target == "pi":
+                if edge.source == agent_id and edge.target == pi_id:
                     edge.trust = clamp(edge.trust + 0.06)
                     edge.resentment = clamp(edge.resentment - 0.08)
         return removed
@@ -186,7 +213,7 @@ def apply_memory_intervention(world: WorldState, intervention: Intervention) -> 
             "round": intervention.apply_at_round,
             "event_ref": "E003",
             "content_type": "promise_fulfilled",
-            "target": "pi",
+            "target": pi_id,
             "valence": 0.72,
             "strength": 0.88,
             "strength_0": 0.88,
@@ -214,7 +241,7 @@ def apply_memory_intervention(world: WorldState, intervention: Intervention) -> 
             "round": intervention.apply_at_round,
             "event_ref": "E025",
             "content_type": "betrayal_signal",
-            "target": "phd_b",
+            "target": rival_id,
             "valence": -0.78,
             "strength": 0.85,
             "strength_0": 0.85,

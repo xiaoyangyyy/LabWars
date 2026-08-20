@@ -1,17 +1,18 @@
-﻿"""Soft power authorship game 鈥?continuous ranking, no discrete overrides."""
+"""Soft power authorship game 鈥?continuous ranking, no discrete overrides."""
 
 from __future__ import annotations
 
 import math
 from typing import Any
 
-from src.world.models import Agent, ProjectState, WorldState
+from src.world.models import Agent, AgentRole, ProjectState, WorldState
+from src.world.organization import authority_ids, primary_authority
 
 from .math_utils import clamp, entropy, logistic_gate, normalize_simplex, softplus
 from .power import pi_control_pressure, pi_preference_distribution
 
 
-DIM_WEIGHTS = {
+_RAW_DIM_WEIGHTS = {
     "idea": 0.25,
     "experiments": 0.30,
     "writing": 0.20,
@@ -21,6 +22,8 @@ DIM_WEIGHTS = {
     "funding": 0.05,
     "supervision": 0.12,
 }
+_DIM_TOTAL = sum(_RAW_DIM_WEIGHTS.values())
+DIM_WEIGHTS = {dim: weight / _DIM_TOTAL for dim, weight in _RAW_DIM_WEIGHTS.items()}
 
 
 def merit_score(agent_id: str, ledger: dict[str, dict[str, float]]) -> float:
@@ -61,7 +64,8 @@ def compute_authorship_scores(
         if a.role.value not in ("reviewer", "program_officer", "alumni", "rival_lab")
     ]
     threat_counts = threat_counts or {}
-    pi = agents.get("pi")
+    authority = primary_authority(world)
+    pi = agents.get(authority) if authority else None
     pi_weight = clamp(0.45 * _pi_power_weight(world.project, pi) + 0.55 * pi_control_pressure(world))
 
     merit = {aid: merit_score(aid, ledger) for aid in candidates}
@@ -75,9 +79,9 @@ def compute_authorship_scores(
             + 0.20 * (1.0 - agent.personality.risk_taking)
             + 0.15 * agent.resources.pi_access
         )
-        if aid == "phd_b":
+        if agent.role == AgentRole.EXPERIMENTER or agent.extra_traits.get("archetype") == "phd_b":
             pref += 0.12
-        if aid == "pi":
+        if aid in authority_ids(world):
             pref += 0.20
         pi_pref[aid] = pref
     pi_pref = normalize_simplex(pi_pref)

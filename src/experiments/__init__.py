@@ -10,6 +10,9 @@ from .policy_mode_comparison import run_policy_mode_comparison
 from .policy_protocol import PolicyComparisonResult, run_policy_comparison_protocol
 from .sampling_frontier import SamplingFrontierResult, run_sampling_frontier
 from .emergence_challenge import EgalitarianEmergenceResult, run_egalitarian_emergence_challenge
+from .causal_mri import run_causal_mri
+from .paper_protocol import PaperProtocolResult, run_paper_protocol
+from .paper_contrasts import run_experiment_contrasts, run_paper_contrasts
 from .report import generate_report
 from .runner import run_single
 from .scale import ScaleExperimentResult, run_scale_experiment
@@ -21,6 +24,11 @@ __all__ = [
     "aggregate_experiment",
     "build_sim_config",
     "generate_report",
+    "run_causal_mri",
+    "run_paper_protocol",
+    "PaperProtocolResult",
+    "run_paper_contrasts",
+    "run_experiment_contrasts",
     "get_condition",
     "run_batch",
     "list_benchmark_tasks",

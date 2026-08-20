@@ -11,7 +11,9 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable
 
 from src.cognition.memory import RecallResult
+from src.cognition.reputation import current_reputation
 from src.world.models import Agent, EventAtom, RelationshipEdge, WorldState, clamp
+from src.world.organization import agent_contribution_share, primary_authority
 
 SOCIAL_POTENTIAL_DIMENSIONS = (
     "reputation_pressure",
@@ -110,8 +112,9 @@ def _edge(world: WorldState, source: str, target: str) -> RelationshipEdge | Non
 def _target(agent: Agent, world: WorldState, event: EventAtom) -> str:
     if event.source in world.agents and event.source != agent.id:
         return event.source
-    if "pi" in world.agents and agent.id != "pi":
-        return "pi"
+    authority = primary_authority(world, agent)
+    if authority and agent.id != authority:
+        return authority
     for target in event.targets:
         if target in world.agents and target != agent.id:
             return target
@@ -119,12 +122,7 @@ def _target(agent: Agent, world: WorldState, event: EventAtom) -> str:
 
 
 def _contribution_share(agent: Agent, world: WorldState) -> float:
-    ledger = world.project.contribution_ledger.get(agent.id, {})
-    if not ledger:
-        controls = agent.resources.code_control + agent.resources.data_control + agent.resources.writing_control
-        return clamp(controls / 3.0)
-    vals = [float(v) for v in ledger.values() if isinstance(v, (int, float))]
-    return clamp(sum(vals) / max(1, len(vals)))
+    return agent_contribution_share(world, agent.id)
 
 
 def _memory_pressure(agent: Agent, recall: RecallResult | None) -> float:
@@ -154,18 +152,21 @@ def compute_social_potential(
     disabled = set(lesions or [])
     tgt = target or _target(agent, world, event)
     edge = _edge(world, agent.id, tgt)
-    pi_edge = _edge(world, agent.id, "pi")
+    authority = primary_authority(world, agent)
+    pi_edge = _edge(world, agent.id, authority) if authority else None
     project = world.project.project
     contribution_share = _contribution_share(agent, world)
     trust = edge.trust if edge else agent.beliefs.team_trust
     pi_dependency = pi_edge.dependency if pi_edge else agent.personality.authority_dependence
+    reputation = current_reputation(agent)
 
     dimensions = {
         "reputation_pressure": clamp(
-            0.35 * (1.0 - agent.beliefs.my_contribution_recognized)
-            + 0.25 * project.authorship_conflict
-            + 0.20 * agent.personality.credit_sensitivity
-            + 0.20 * (1.0 - agent.resources.external_network)
+            0.28 * (1.0 - agent.beliefs.my_contribution_recognized)
+            + 0.22 * project.authorship_conflict
+            + 0.18 * agent.personality.credit_sensitivity
+            + 0.16 * (1.0 - agent.resources.external_network)
+            + 0.16 * (1.0 - reputation)
         ),
         "trust_deficit": clamp(
             0.40 * (1.0 - trust)
@@ -205,6 +206,8 @@ def compute_social_potential(
         "target_resentment": round(float(edge.resentment if edge else agent.emotion.resentment), 4),
         "pi_dependency": round(float(pi_dependency), 4),
         "contribution_share": round(float(contribution_share), 4),
+        "reputation": round(float(reputation), 4),
+        "authority": authority,
         "authorship_conflict": round(float(project.authorship_conflict), 4),
         "deadline_pressure": round(float(project.deadline_pressure), 4),
         "rival_threat": round(float(project.rival_threat), 4),

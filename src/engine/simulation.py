@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import random
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -11,8 +12,12 @@ from typing import Any
 
 import yaml
 
+from src.cognition.memory import decay_memories
 from src.cognition.pipeline import commit_cognition_phase, pre_decision_recall
 from src.cognition.power import career_hostage_index, pi_control_pressure, pi_control_surface
+from src.cognition.pressure_fields import summarize_pressure_fields
+from src.engine.causal.llm_trace import LLMTrace, TracingAdapter, bind_llm_trace, current_llm_trace, reset_llm_trace
+from src.engine.causal.noise import NoiseLog, bind_noise_log, reset_noise_log
 from src.engine.critic import CriticAgent
 from src.engine.event_agent import EventAgent, is_agent_active
 from src.engine.intervention import (
@@ -22,13 +27,15 @@ from src.engine.intervention import (
     get_active_interventions,
     load_interventions,
 )
-from src.engine.llm_adapter import LLMAdapter, get_adapter, load_llm_config
+from src.engine.llm_adapter import LLMAdapter, QuotaExhaustedError, get_adapter, load_llm_config
 from src.engine.probe import ProbeAgent
 from src.engine.role_policy import RolePolicyAgent
 from src.engine.run_log import RunLog, finalize_outcomes
+from src.engine.story_cast import event_cast_asdict
 from src.world.actions import ActionType, apply_project_effects
 from src.world.loader import PROJECT_ROOT, load_world
-from src.world.models import ProjectMetrics, WorldState
+from src.world.models import AgentRole, ProjectMetrics, WorldState
+from src.world.organization import authority_ids, resolve_event_cast
 from src.world.population import PopulationSpec, equalize_population, expand_population
 
 CONFIG_DIR = PROJECT_ROOT / "config"
@@ -60,6 +67,7 @@ class SimConfig:
     hierarchy_lesion: bool = False
     status_lesion: bool = False
     trust_lesion: bool = False
+    observation_lesion: bool = False
     population_size: int | None = None
     population_labs: int | None = None
     cognitive_sampling_top_k: int | None = None
@@ -87,6 +95,7 @@ class SimConfig:
             "hierarchy_lesion": self.hierarchy_lesion,
             "status_lesion": self.status_lesion,
             "trust_lesion": self.trust_lesion,
+            "observation_lesion": self.observation_lesion,
             "population_size": self.population_size,
             "population_labs": self.population_labs,
             "cognitive_sampling_top_k": self.cognitive_sampling_top_k,
@@ -138,7 +147,7 @@ def _apply_hierarchy_lesion(world: WorldState) -> WorldState:
         agent.resources.external_network = max(agent.resources.external_network, 0.68)
         agent.beliefs.pi_fairness = max(agent.beliefs.pi_fairness, 0.52)
     for edge in w.relationships:
-        if edge.target == "pi" or edge.source == "pi":
+        if edge.target in authority_ids(w) or edge.source in authority_ids(w):
             edge.dependency = min(edge.dependency, 0.18)
             edge.obligation = min(edge.obligation, 0.25)
             edge.information_access = max(edge.information_access, 0.58)
@@ -216,6 +225,52 @@ def _resolve_llm(cfg: SimConfig) -> LLMAdapter:
 
 def run_simulation(config: SimConfig | None = None) -> RunLog:
     cfg = config or SimConfig()
+    noise = NoiseLog()
+    noise_token = bind_noise_log(noise)
+    trace = current_llm_trace()
+    llm_token = None
+    if trace is None:
+        trace = LLMTrace()
+        llm_token = bind_llm_trace(trace)
+    try:
+        return _run_simulation(cfg, noise, trace)
+    finally:
+        reset_noise_log(noise_token)
+        if llm_token is not None:
+            reset_llm_trace(llm_token)
+
+
+def _seal_run_log(
+    log: RunLog,
+    world: WorldState,
+    noise: NoiseLog,
+    trace: LLMTrace,
+    hits0: int,
+    misses0: int,
+    probe: ProbeAgent,
+    cfg: SimConfig,
+) -> None:
+    finalize_outcomes(log, world.agents, world.relationships)
+    log.outcomes["career_hostage_index"] = career_hostage_index(world)
+    log.outcomes["pi_control_surface"] = pi_control_surface(world)
+    from src.experiments.social_metrics import compute_social_emergence_metrics
+
+    log.outcomes.update(compute_social_emergence_metrics(log))
+    log.outcomes.update(summarize_pressure_fields(log.actions))
+    log.outcomes["probe_suggestions"] = probe.suggest(log.round_records)
+    log.noise_log = noise.to_list()
+    log.llm_cache = trace
+    log.outcomes["noise_draw_count"] = len(log.noise_log)
+    log.outcomes["llm_trace_stats"] = {
+        **trace.stats(),
+        "run_hits": trace.hits - hits0,
+        "run_misses": trace.misses - misses0,
+    }
+    if cfg.output_dir:
+        log.write_jsonl(Path(cfg.output_dir) / f"run_{log.run_id}.jsonl")
+
+
+def _run_simulation(cfg: SimConfig, noise: NoiseLog, trace: LLMTrace) -> RunLog:
     if cfg.mvp:
         mvp = load_mvp_config()
         cfg.active_agents = cfg.active_agents or mvp.active_agents
@@ -237,11 +292,19 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         world = _apply_status_lesion(world)
     if cfg.trust_lesion:
         world = _apply_trust_lesion(world)
-    llm = _resolve_llm(cfg)
+    inner = _resolve_llm(cfg)
+    if isinstance(inner, TracingAdapter):
+        inner.trace = trace
+        llm: LLMAdapter = inner
+    else:
+        llm = TracingAdapter(inner, trace)
+    hits0, misses0 = trace.hits, trace.misses
     event_agent = EventAgent(seed=cfg.seed, state_events=not cfg.disable_state_events)
     policy = RolePolicyAgent(llm=llm)
     critic = CriticAgent()
     probe = ProbeAgent()
+    event_cast = resolve_event_cast(world)
+    log.config["event_cast"] = event_cast_asdict(event_cast)
 
     sim_config_dict = {
         "seed": cfg.seed,
@@ -255,6 +318,7 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         "hierarchy_lesion": cfg.hierarchy_lesion,
         "status_lesion": cfg.status_lesion,
         "trust_lesion": cfg.trust_lesion,
+        "observation_lesion": cfg.observation_lesion,
         "population_size": cfg.population_size,
         "population_labs": cfg.population_labs,
         "cognitive_sampling_top_k": cfg.cognitive_sampling_top_k,
@@ -262,103 +326,120 @@ def run_simulation(config: SimConfig | None = None) -> RunLog:
         "egalitarian_initialization": cfg.egalitarian_initialization,
     }
 
-    for round_num in range(1, cfg.max_rounds + 1):
-        active_inters = get_active_interventions(cfg.interventions, round_num)
+    round_num = 0
+    try:
+        for round_num in range(1, cfg.max_rounds + 1):
+            if os.environ.get("LABWARS_PROGRESS"):
+                print(f"    round {round_num}/{cfg.max_rounds} run={run_id}", flush=True)
+            active_inters = get_active_interventions(cfg.interventions, round_num)
 
-        event = event_agent.generate(round_num, world)
-        if event is None:
-            continue
-
-        intervention_id = None
-        for inter in active_inters:
-            if inter.skip_event:
-                event = None
-                break
-            if inter.type == "memory_intervention":
-                removed = apply_world_intervention(world, inter)
-                intervention_id = inter.intervention_id
-                entry = {"round": round_num, **asdict(inter)}
-                if removed:
-                    entry["memories_removed"] = removed
-                log.interventions_applied.append(entry)
-            elif inter.target_event is None or inter.target_event == event.event_id:
-                event = apply_event_override(event, inter)
-                intervention_id = inter.intervention_id
-                log.interventions_applied.append({"round": round_num, **asdict(inter)})
-
-        if event is None:
-            continue
-
-        if cfg.shuffle_memory:
-            _shuffle_memory_refs(world, cfg.seed + round_num)
-
-        log.record_event(event, intervention_id)
-
-        recalls = pre_decision_recall(world, event, disable_memory=cfg.disable_memory)
-        raw_actions = policy.decide_all(world, event, recalls, sim_config_dict)
-
-        vetted_actions: list[dict[str, Any]] = []
-        for act in raw_actions:
-            agent = world.agents[act["agent"]]
-            violations = critic.check(act, agent, world)
-            if violations:
-                log.critic_violations.extend([
-                    {"round": round_num, "agent": act["agent"], **v.__dict__} for v in violations
-                ])
-                act, _ = critic.fix_or_reject(act, agent, violations)
-            vetted_actions.append(act)
-            log.record_action(act["agent"], act, round_num)
-
-        cog = commit_cognition_phase(
-            world,
-            event,
-            recalls,
-            actions=vetted_actions,
-            disable_memory=cfg.disable_memory,
-            llm_adapter=llm,
-        )
-        if cfg.status_lesion:
-            world = _apply_status_lesion(world)
-        if cfg.trust_lesion:
-            world = _apply_trust_lesion(world)
-
-        for atype in (ActionType.RUN_EXPERIMENT, ActionType.DEBUG_CODE, ActionType.WRITE_SECTION):
-            pass  # project effects applied below
-
-        for act in vetted_actions:
-            try:
-                action_enum = ActionType(act["type"])
-                pd = world.project.project.model_dump()
-                pd = apply_project_effects(pd, action_enum)
-                world.project.project = ProjectMetrics(**pd)
-            except ValueError:
+            event = event_agent.generate(round_num, world)
+            if event is None:
                 continue
 
-        if event.type == "submission_decision" and event.payload.get("submission_status") == "submitted":
-            world.project.submission_status = "submitted"
-        if event.type == "authorship_draft":
-            world.project.author_order_draft = event.payload.get("author_order", [])
+            intervention_id = None
+            for inter in active_inters:
+                if inter.skip_event:
+                    if not cfg.disable_memory:
+                        for agent in world.agents.values():
+                            decay_memories(agent, round_num)
+                    log.interventions_applied.append({"round": round_num, **asdict(inter), "skipped": True})
+                    event = None
+                    break
+                if inter.type == "memory_intervention":
+                    removed = apply_world_intervention(world, inter, event_cast)
+                    intervention_id = inter.intervention_id
+                    entry = {"round": round_num, **asdict(inter)}
+                    if removed:
+                        entry["memories_removed"] = removed
+                    log.interventions_applied.append(entry)
+                elif inter.target_event is None or inter.target_event == event.event_id:
+                    event = apply_event_override(event, inter, event_cast)
+                    intervention_id = inter.intervention_id
+                    log.interventions_applied.append({"round": round_num, **asdict(inter)})
 
-        metrics = {
-            **cog.metrics,
-            "career_hostage_index": career_hostage_index(world),
-            "pi_control_pressure_phd_a": pi_control_pressure(world, world.agents.get("phd_a")),
-            "integrity_risk": world.project.project.integrity_risk,
-            **_relationship_snapshot(world),
-        }
-        log.record_round(round_num, event.event_id, metrics, cog.agent_deltas, intervention_id)
+            if event is None:
+                continue
 
-        if world.project.submission_status == "accepted":
-            break
+            if cfg.shuffle_memory:
+                _shuffle_memory_refs(world, cfg.seed + round_num)
 
-    finalize_outcomes(log, world.agents, world.relationships)
-    log.outcomes["career_hostage_index"] = career_hostage_index(world)
-    log.outcomes["pi_control_surface"] = pi_control_surface(world)
-    from src.experiments.social_metrics import compute_social_emergence_metrics
-    log.outcomes.update(compute_social_emergence_metrics(log))
-    log.outcomes["probe_suggestions"] = probe.suggest(log.round_records)
+            log.record_event(event, intervention_id)
 
-    if cfg.output_dir:
-        log.write_jsonl(Path(cfg.output_dir) / f"run_{run_id}.jsonl")
+            recalls = pre_decision_recall(
+                world,
+                event,
+                disable_memory=cfg.disable_memory,
+                omniscient_observation=cfg.observation_lesion,
+            )
+            raw_actions = policy.decide_all(world, event, recalls, sim_config_dict)
 
+            vetted_actions: list[dict[str, Any]] = []
+            for act in raw_actions:
+                agent = world.agents[act["agent"]]
+                violations = critic.check(act, agent, world)
+                if violations:
+                    log.critic_violations.extend([
+                        {"round": round_num, "agent": act["agent"], **v.__dict__} for v in violations
+                    ])
+                    act, _ = critic.fix_or_reject(act, agent, violations)
+                vetted_actions.append(act)
+                log.record_action(act["agent"], act, round_num)
+
+            cog = commit_cognition_phase(
+                world,
+                event,
+                recalls,
+                actions=vetted_actions,
+                disable_memory=cfg.disable_memory,
+                llm_adapter=llm,
+                omniscient_observation=cfg.observation_lesion,
+            )
+            if cfg.status_lesion:
+                world = _apply_status_lesion(world)
+            if cfg.trust_lesion:
+                world = _apply_trust_lesion(world)
+
+            for act in vetted_actions:
+                try:
+                    action_enum = ActionType(act["type"])
+                    pd = world.project.project.model_dump()
+                    pd = apply_project_effects(pd, action_enum)
+                    world.project.project = ProjectMetrics(**pd)
+                except ValueError:
+                    continue
+
+            if event.type == "submission_decision" and event.payload.get("submission_status") == "submitted":
+                world.project.submission_status = "submitted"
+            if event.type == "authorship_draft":
+                world.project.author_order_draft = event.payload.get("author_order", [])
+
+            focal = world.agents.get(event_cast.idea) or next(
+                (agent for agent in world.agents.values() if agent.role == AgentRole.IDEA_ORIGINATOR),
+                None,
+            )
+            pressure = pi_control_pressure(world, focal)
+            metrics = {
+                **cog.metrics,
+                "career_hostage_index": career_hostage_index(world),
+                "pi_control_pressure_phd_a": pressure,
+                "pi_control_pressure_focal": pressure,
+                "integrity_risk": world.project.project.integrity_risk,
+                **_relationship_snapshot(world),
+            }
+            log.record_round(round_num, event.event_id, metrics, cog.agent_deltas, intervention_id)
+
+            if world.project.submission_status == "accepted":
+                break
+    except QuotaExhaustedError as exc:
+        log.outcomes["stopped_reason"] = "quota_exhausted"
+        log.outcomes["stopped_round"] = round_num
+        try:
+            _seal_run_log(log, world, noise, trace, hits0, misses0, probe, cfg)
+        except Exception:
+            log.llm_cache = trace
+        exc.partial_log = log
+        raise
+
+    _seal_run_log(log, world, noise, trace, hits0, misses0, probe, cfg)
     return log

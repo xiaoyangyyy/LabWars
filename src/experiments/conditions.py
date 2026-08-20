@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -134,19 +135,23 @@ def build_sim_config(
     from pathlib import Path
 
     run_id = f"{condition.experiment_id}{condition.condition_id}_seed{seed}"
+    provider = condition.llm_provider or os.environ.get("LABWARS_LLM_PROVIDER") or None
+    top_k_raw = os.environ.get("LABWARS_COGNITIVE_TOP_K")
+    top_k = int(top_k_raw) if top_k_raw else None
     return SimConfig(
         max_rounds=max_rounds,
         seed=seed + condition.seed_offset,
         interventions=_i(*condition.intervention_ids),
         disable_memory=condition.disable_memory,
         shuffle_memory=condition.shuffle_memory,
-        llm_provider=condition.llm_provider,
+        llm_provider=provider,
         llm_model=condition.llm_model,
         llm_temperature=condition.llm_temperature,
         experiment_id=condition.experiment_id,
         condition_id=condition.condition_id,
         run_id=run_id,
         output_dir=Path(output_dir) if output_dir else None,
+        cognitive_sampling_top_k=top_k,
     )
 
 
@@ -159,6 +164,36 @@ def condition_summary() -> list[dict[str, Any]]:
                 "condition": cid,
                 "label": cond.label,
                 "interventions": cond.intervention_ids,
+                "primary_outcomes": list(cond.primary_outcomes),
                 "runs_per_seed_batch": 1,
             })
     return rows
+
+
+EXPERIMENT_PRIMARY_OUTCOME = {
+    "A": "authorship_escalation_score",
+    "B": "help_rebuttal",
+    "C": "trust_phd_b_r60",
+    "D": "interpretation_of_E030",
+    "V": "protest_authorship",
+}
+
+
+def primary_outcome_for(experiment_id: str) -> str:
+    return EXPERIMENT_PRIMARY_OUTCOME[experiment_id.upper()]
+
+
+def report_outcomes_for(experiment_id: str) -> list[str]:
+    from src.engine.run_log import SPLIT_Y_KEYS
+
+    exp = experiment_id.upper()
+    keys: list[str] = []
+    table = EXPERIMENT_MATRIX[exp]
+    for cond in table.values():
+        for key in cond.primary_outcomes:
+            if key not in keys:
+                keys.append(key)
+    for key in SPLIT_Y_KEYS:
+        if key not in keys:
+            keys.append(key)
+    return keys

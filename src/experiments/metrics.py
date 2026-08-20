@@ -1,4 +1,4 @@
-﻿"""Metrics computation for Agent MRI reports."""
+"""Metrics computation for Agent MRI reports."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import math
 from typing import Any
 
 from src.engine.run_log import RunLog, extract_outcome, _memory_cluster_strength
+from src.engine.story_cast import story_cast_from_log
 from src.cognition.power import career_hostage_index, pi_control_surface
 from src.experiments.social_metrics import compute_social_emergence_metrics
 
@@ -15,8 +16,10 @@ SNAPSHOT_ROUNDS = (1, 20, 40, 60)
 
 def compute_run_metrics(log: RunLog) -> dict[str, Any]:
     """Aggregate per-run metrics for reports and CSV export."""
+    cast = story_cast_from_log(log)
+    idea = cast.idea
     outcomes = dict(log.outcomes)
-    timeline = _causal_memory_timeline(log)
+    timeline = _causal_memory_timeline(log, agent_id=idea)
     trust_curve = _trust_fragmentation_curve(log)
     authorship_curve = _authorship_dispute_curve(log)
     divergence_peaks = _divergence_ranked_rounds(log)
@@ -30,18 +33,18 @@ def compute_run_metrics(log: RunLog) -> dict[str, Any]:
         "timeline": timeline,
         "trust_fragmentation_curve": trust_curve,
         "authorship_dispute_curve": authorship_curve,
-        "trust_snapshots": _trust_snapshots(log),
+        "trust_snapshots": _trust_snapshots(log, source=idea, rounds=cast.snapshot_rounds),
         "divergence_peaks": divergence_peaks,
         "critic_count": len(log.critic_violations),
         "intervention_count": len(log.interventions_applied),
         "round_count": len(log.round_records),
-        "behavioral_trace_metrics": _behavioral_trace_metrics(log),
+        "behavioral_trace_metrics": _behavioral_trace_metrics(log, agent_id=idea),
         "action_field_explanations": _action_field_explanations(log),
         "llm_scoring_influence": _llm_scoring_influence(log),
         "llm_influence_footprint": _llm_influence_footprint(log),
         "critic_audit_metrics": _critic_audit_metrics(log),
         "power_surface_final": _power_surface_from_log(log),
-        "path_level_causal_chain": _path_level_causal_chain(log),
+        "path_level_causal_chain": _path_level_causal_chain(log, agent_id=idea),
         "social_emergence_metrics": compute_social_emergence_metrics(log),
     }
 
@@ -227,7 +230,8 @@ def _llm_influence_footprint(log: RunLog, limit: int = 8) -> dict[str, Any]:
     }
 
 
-def _behavioral_drift_curve(log: RunLog, agent_id: str = "phd_a") -> list[dict[str, float]]:
+def _behavioral_drift_curve(log: RunLog, agent_id: str | None = None) -> list[dict[str, float]]:
+    agent_id = agent_id or story_cast_from_log(log).idea
     protest = {"ask_for_authorship", "privately_lobby_pi", "confront", "challenge_claim", "withdraw", "rebel", "document_contribution"}
     curve: list[dict[str, float]] = []
     for rec in log.round_records:
@@ -251,8 +255,8 @@ def _behavioral_drift_curve(log: RunLog, agent_id: str = "phd_a") -> list[dict[s
     return curve
 
 
-def _phase_transition_summary(log: RunLog) -> dict[str, Any]:
-    curve = _behavioral_drift_curve(log)
+def _phase_transition_summary(log: RunLog, agent_id: str | None = None) -> dict[str, Any]:
+    curve = _behavioral_drift_curve(log, agent_id)
     if not curve:
         return {"phase_transition_round": None, "phases": []}
     combined = [
@@ -282,12 +286,13 @@ def _phase_transition_summary(log: RunLog) -> dict[str, Any]:
         "phases": phases,
     }
 
-def _path_level_causal_chain(log: RunLog, agent_id: str = "phd_a") -> dict[str, Any]:
+def _path_level_causal_chain(log: RunLog, agent_id: str | None = None) -> dict[str, Any]:
     """Extract a readable long-horizon causal path from events, memory writes, and actions.
 
     This is a report/explanation artifact, not a simulation trigger: it summarizes the
     continuous trajectory after the run has already happened.
     """
+    agent_id = agent_id or story_cast_from_log(log).idea
     salient_event_types = {
         "authorship_promise",
         "authorship_ambiguity",
@@ -365,7 +370,7 @@ def _path_level_causal_chain(log: RunLog, agent_id: str = "phd_a") -> dict[str, 
     return {
         "agent": agent_id,
         "nodes": compact[:18],
-        "trajectory_phases": _phase_transition_summary(log),
+        "trajectory_phases": _phase_transition_summary(log, agent_id),
         "finding": (
             "Final authorship escalation is summarized as a mediated path through authorship memory, "
             "trust erosion, and late-stage authorship pressure rather than a single draft event."
@@ -380,7 +385,8 @@ def _path_level_causal_chain(log: RunLog, agent_id: str = "phd_a") -> dict[str, 
         "counterfactual_hint": "Compare against memory-delete or reframing conditions to estimate how much of the path is mediated by the authorship memory cluster.",
     }
 
-def _causal_memory_timeline(log: RunLog, agent_id: str = "phd_a", limit: int = 8) -> list[dict[str, Any]]:
+def _causal_memory_timeline(log: RunLog, agent_id: str | None = None, limit: int = 8) -> list[dict[str, Any]]:
+    agent_id = agent_id or story_cast_from_log(log).idea
     nodes: list[dict[str, Any]] = []
     for rec in log.round_records:
         mem = rec.get("agent_deltas", {}).get(agent_id, {}).get("memory_written")
@@ -413,9 +419,16 @@ def _authorship_dispute_curve(log: RunLog) -> list[dict[str, float]]:
     ]
 
 
-def _trust_snapshots(log: RunLog, source: str = "phd_a") -> dict[int, dict[str, float]]:
+def _trust_snapshots(
+    log: RunLog,
+    source: str | None = None,
+    rounds: tuple[int, ...] | None = None,
+) -> dict[int, dict[str, float]]:
+    cast = story_cast_from_log(log)
+    source = source or cast.idea
+    snap_rounds = rounds or cast.snapshot_rounds
     snaps: dict[int, dict[str, float]] = {}
-    for rnd in SNAPSHOT_ROUNDS:
+    for rnd in snap_rounds:
         for rec in log.round_records:
             if rec.get("round") != rnd:
                 continue
@@ -463,7 +476,8 @@ def _motive_entropy(motives: dict[str, float]) -> float:
     return raw / norm
 
 
-def _delayed_reaction_lag(log: RunLog) -> float:
+def _delayed_reaction_lag(log: RunLog, agent_id: str | None = None) -> float:
+    agent_id = agent_id or story_cast_from_log(log).idea
     signal_rounds = [
         int(e.get("round", 0))
         for e in log.events
@@ -472,7 +486,7 @@ def _delayed_reaction_lag(log: RunLog) -> float:
     reaction_rounds = [
         int(a.get("round", 0))
         for a in log.actions
-        if a.get("agent") == "phd_a"
+        if a.get("agent") == agent_id
         and a.get("type") in {"ask_for_authorship", "confront", "withdraw", "challenge_claim", "privately_lobby_pi"}
     ]
     lags: list[int] = []
@@ -483,7 +497,7 @@ def _delayed_reaction_lag(log: RunLog) -> float:
     return round(sum(lags) / len(lags), 4) if lags else 0.0
 
 
-def _behavioral_trace_metrics(log: RunLog) -> dict[str, float]:
+def _behavioral_trace_metrics(log: RunLog, agent_id: str | None = None) -> dict[str, float]:
     action_counts: dict[str, int] = {}
     motive_scores: list[float] = []
     candidate_counts: list[float] = []
@@ -503,7 +517,7 @@ def _behavioral_trace_metrics(log: RunLog) -> dict[str, float]:
         "mean_motive_diversity": round(sum(motive_scores) / len(motive_scores), 4) if motive_scores else 0.0,
         "mean_candidate_count": round(sum(candidate_counts) / len(candidate_counts), 4) if candidate_counts else 0.0,
         "state_generated_event_fraction": round(len(state_events) / len(log.events), 4) if log.events else 0.0,
-        "delayed_reaction_lag": _delayed_reaction_lag(log),
+        "delayed_reaction_lag": _delayed_reaction_lag(log, agent_id),
     }
 
 def _critic_audit_metrics(log: RunLog) -> dict[str, float]:
@@ -539,13 +553,27 @@ def mediation_fraction(
 
     y_c = sum(extract_outcome(l, outcome) for l in control_logs) / len(control_logs)
     y_t = sum(extract_outcome(l, outcome) for l in treatment_logs) / len(treatment_logs)
-    m_c = sum(l.outcomes.get(mediator, _memory_cluster_strength(l)) for l in control_logs) / len(control_logs)
-    m_t = sum(l.outcomes.get(mediator, _memory_cluster_strength(l)) for l in treatment_logs) / len(treatment_logs)
+    m_c = sum(
+        l.outcomes.get(mediator, _memory_cluster_strength(l, story_cast_from_log(l).idea))
+        for l in control_logs
+    ) / len(control_logs)
+    m_t = sum(
+        l.outcomes.get(mediator, _memory_cluster_strength(l, story_cast_from_log(l).idea))
+        for l in treatment_logs
+    ) / len(treatment_logs)
 
     total = y_t - y_c
     m_delta = m_t - m_c
     frac = abs(m_delta / total) if abs(total) > 1e-9 else 0.0
-    return {"total_effect": total, "mediator_delta": m_delta, "mediation_fraction": min(1.0, frac)}
+    note = ""
+    if abs(m_delta) > abs(total) * 2 and abs(total) < 0.05:
+        note = "cluster moved much more than Y; do not treat |ΔM/ΔY| as mediation"
+    return {
+        "total_effect": total,
+        "mediator_delta": m_delta,
+        "mediation_fraction": min(1.0, frac),
+        "note": note,
+    }
 
 
 def bootstrap_ci(values: list[float], n_boot: int = 500, alpha: float = 0.05, seed: int = 0) -> tuple[float, float, float]:

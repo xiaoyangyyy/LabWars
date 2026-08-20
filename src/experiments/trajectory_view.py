@@ -1,4 +1,4 @@
-﻿"""Trajectory export for visual inspection and lightweight viewers."""
+"""Trajectory export for visual inspection and lightweight viewers."""
 
 from __future__ import annotations
 
@@ -37,7 +37,8 @@ def build_trajectory_view(log: RunLog) -> dict[str, Any]:
                 "trust_fragmentation": metrics.get("trust_fragmentation", 0.0),
                 "credit_threat_density": metrics.get("credit_threat_density", 0.0),
                 "career_hostage_index": metrics.get("career_hostage_index", 0.0),
-                "pi_control_pressure_phd_a": metrics.get("pi_control_pressure_phd_a", 0.0),
+                "pi_control_pressure_phd_a": metrics.get("pi_control_pressure_phd_a", metrics.get("pi_control_pressure_focal", 0.0)),
+                "pi_control_pressure_focal": metrics.get("pi_control_pressure_focal", metrics.get("pi_control_pressure_phd_a", 0.0)),
             },
             "actions": [
                 {

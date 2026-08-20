@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.world.models import Agent, Beliefs, EventAtom, ProjectMetrics
+from src.world.models import Agent, AgentRole, Beliefs, EventAtom, ProjectMetrics
 
 from .dynamics import authorship_memory_cluster, draft_rank_shock, nonlinear_belief_target, nonlinear_recall_shift
 from .math_utils import clamp, impulse_response, logistic_gate, precision_weighted_update, truth_status_precision
@@ -49,7 +49,7 @@ def _prior_precision(agent: Agent, belief_key: str) -> float:
 
 
 def _cluster_amplification(agent: Agent, event: EventAtom) -> float:
-    if agent.id != "phd_a":
+    if agent.id != "phd_a" and agent.role != AgentRole.IDEA_ORIGINATOR:
         return 0.0
     cluster = authorship_memory_cluster(agent, round_min=1, round_max=event.round, current_round=event.round)
     return cluster * 0.85
@@ -174,13 +174,31 @@ def update_beliefs(
     event: EventAtom,
     project: ProjectMetrics,
     recall: RecallResult | None = None,
+    *,
+    channel: str = "direct",
 ) -> dict[str, float]:
-    if agent.id not in event.targets and event.source != agent.id:
-        if event.type not in ("rival_preprint", "funding_pressure"):
-            return agent.beliefs.model_dump()
+    from src.world.organization import observation_gain
+
+    gain = observation_gain(channel)
+    if gain <= 0.0 and channel == "none":
+        obs_precision_base = 0.12
+        beliefs = agent.beliefs.model_dump()
+        project_obs = _project_belief_observation(project)
+        for key in BELIEF_KEYS:
+            val = getattr(project_obs, key, None)
+            if val is None:
+                continue
+            prior = beliefs[key]
+            beliefs[key] = round(
+                clamp(precision_weighted_update(prior, val, _prior_precision(agent, key), obs_precision_base * 0.35)),
+                4,
+            )
+        agent.beliefs = Beliefs(**beliefs)
+        return beliefs
 
     obs_precision_base = truth_status_precision(event.truth_status) * (0.5 + 0.5 * event.memory_salience)
     obs_precision_base *= 0.7 + 0.3 * (1.0 - agent.personality.conflict_avoidance)
+    obs_precision_base *= max(gain, 0.15)
 
     beliefs = agent.beliefs.model_dump()
     observations = [

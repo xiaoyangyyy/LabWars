@@ -1,4 +1,4 @@
-﻿"""Cognitive dynamics pipeline 鈥?one round state evolution."""
+"""Cognitive dynamics pipeline 鈥?one round state evolution."""
 
 from __future__ import annotations
 
@@ -26,13 +26,18 @@ from .memory import (
     reconsolidate_memories,
     write_memory,
 )
-
-_EMPTY_RECALL = RecallResult({}, [], 0.0, 0.0, {"disabled": True})
 from .relationship import (
     coalition_strength,
     credit_threat_density,
     trust_fragmentation,
     update_relationships,
+)
+from .reputation import update_reputation_from_action
+from src.world.organization import (
+    default_private_intent,
+    observation_channel,
+    perceived_event,
+    rumor_recipients,
 )
 
 
@@ -50,16 +55,31 @@ def pre_decision_recall(
     event: EventAtom,
     *,
     disable_memory: bool = False,
+    omniscient_observation: bool = False,
 ) -> dict[str, RecallResult]:
     """Phase A: decay + recall before agent policy (no memory write yet)."""
+    leaked = set() if omniscient_observation else set(rumor_recipients(world, event))
     if disable_memory:
-        return {agent_id: _EMPTY_RECALL for agent_id in world.agents}
+        empty: dict[str, RecallResult] = {}
+        for agent_id, agent in world.agents.items():
+            channel = observation_channel(
+                agent, event, leaked=leaked, omniscient=omniscient_observation
+            )
+            empty[agent_id] = RecallResult(
+                {}, [], 0.0, 0.0, {"disabled": True, "observation_channel": channel}
+            )
+        return empty
 
     current_round = event.round
     recalls: dict[str, RecallResult] = {}
     for agent_id, agent in world.agents.items():
         decay_memories(agent, current_round, same_event=event)
-        recall = recall_memories(agent, event, current_round)
+        channel = observation_channel(
+            agent, event, leaked=leaked, omniscient=omniscient_observation
+        )
+        cue = perceived_event(event, channel)
+        recall = recall_memories(agent, cue, current_round)
+        recall.audit["observation_channel"] = channel
         recalls[agent_id] = recall
     return recalls
 
@@ -72,6 +92,7 @@ def commit_cognition_phase(
     *,
     disable_memory: bool = False,
     llm_adapter: Any | None = None,
+    omniscient_observation: bool = False,
 ) -> CognitiveStepResult:
     """Phase B: after decisions 鈥?write memory, update states, apply action effects."""
     current_round = event.round
@@ -84,17 +105,29 @@ def commit_cognition_phase(
     world.project.project = ProjectMetrics(**project_dict)
     update_ledger_from_event(world, event.type, event.payload)
 
+    leaked = set() if omniscient_observation else set(rumor_recipients(world, event))
+    channels: dict[str, str] = {}
     agent_deltas: dict[str, dict[str, Any]] = {}
 
     for agent_id, agent in world.agents.items():
         recall = recalls.get(agent_id)
+        channel = (recall.audit or {}).get("observation_channel") if recall else None
+        if channel not in {"direct", "rumor", "none"}:
+            channel = observation_channel(
+                agent, event, leaked=leaked, omniscient=omniscient_observation
+            )
+        channels[agent_id] = channel
         if recall and not disable_memory:
             apply_rehearsal(agent, recall.attention_weights, current_round)
 
-        reconsolidation = {"updated": []} if disable_memory else reconsolidate_memories(agent, event, recall, current_round)
-        mem = None if disable_memory else write_memory(agent, event, current_round, llm_adapter=llm_adapter)
-        emotion = update_emotion(agent, event, world.project.project, recall)
-        beliefs = update_beliefs(agent, event, world.project.project, recall)
+        reconsolidation = {"updated": []}
+        mem = None
+        if not disable_memory and channel == "direct":
+            reconsolidation = reconsolidate_memories(agent, event, recall, current_round)
+            mem = write_memory(agent, event, current_round, llm_adapter=llm_adapter, world=world)
+        cue = perceived_event(event, channel)
+        emotion = update_emotion(agent, cue, world.project.project, recall, channel=channel)
+        beliefs = update_beliefs(agent, cue, world.project.project, recall, channel=channel)
 
         agent_deltas[agent_id] = {
             "memory_written": mem.to_dict() if mem else None,
@@ -102,7 +135,24 @@ def commit_cognition_phase(
             "beliefs": beliefs,
             "recall_audit": recall.audit if recall else {},
             "memory_reconsolidation": reconsolidation,
+            "observation_channel": channel,
         }
+
+    if not disable_memory:
+        for agent_id, channel in channels.items():
+            if channel != "rumor":
+                continue
+            rumor_mem = write_memory(
+                world.agents[agent_id],
+                event,
+                current_round,
+                llm_adapter=llm_adapter,
+                channel="rumor",
+                world=world,
+            )
+            if rumor_mem:
+                agent_deltas.setdefault(agent_id, {})
+                agent_deltas[agent_id]["rumor_memory"] = rumor_mem.to_dict()
 
     if actions:
         for act in actions:
@@ -113,12 +163,16 @@ def commit_cognition_phase(
     update_relationships(world, event, recalls, actions=actions)
 
     internal = world.world_config.get("internal_agents", [])
+    n = max(1, len(channels))
     metrics = {
         "authorship_dispute_index": authorship_dispute_index(world),
         "trust_fragmentation": trust_fragmentation(world.relationships, internal),
         "coalition_strength": coalition_strength(world.relationships),
         "credit_threat_density": credit_threat_density(world.relationships),
         "public_private_divergence": mean_divergence(world.agents, internal),
+        "observation_direct_share": round(sum(1 for c in channels.values() if c == "direct") / n, 4),
+        "observation_rumor_share": round(sum(1 for c in channels.values() if c == "rumor") / n, 4),
+        "observation_blind_share": round(sum(1 for c in channels.values() if c == "none") / n, 4),
     }
 
     return CognitiveStepResult(
@@ -167,11 +221,8 @@ def apply_action_cognition(
     agent.public_position = action.get("public_position", agent.public_position)
     agent.private_intent = action.get("private_intent", agent.private_intent)
     if not agent.private_intent:
-        agent.private_intent = {
-            "goal": "secure_first_author",
-            "strategy": action.get("type", "lay_low"),
-            "trust_pi": agent.beliefs.pi_fairness,
-        }
+        agent.private_intent = default_private_intent(agent, str(action.get("type", "lay_low")))
+    update_reputation_from_action(world, action)
 
     divergence = compute_divergence(agent)
     agent.action_history.append(

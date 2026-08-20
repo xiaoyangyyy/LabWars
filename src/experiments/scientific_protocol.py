@@ -19,6 +19,7 @@ PROTOCOL_CONDITIONS = [
     "no_status",
     "no_trust",
     "no_hierarchy",
+    "no_observation",
 ]
 
 PROTOCOL_METRICS = [
@@ -70,6 +71,7 @@ def _condition_config(base: SimConfig, condition: str) -> SimConfig:
         "status_lesion": False,
         "trust_lesion": False,
         "hierarchy_lesion": False,
+        "observation_lesion": False,
     })
     if condition == "baseline":
         pass
@@ -81,6 +83,8 @@ def _condition_config(base: SimConfig, condition: str) -> SimConfig:
         data["trust_lesion"] = True
     elif condition == "no_hierarchy":
         data["hierarchy_lesion"] = True
+    elif condition == "no_observation":
+        data["observation_lesion"] = True
     else:
         raise ValueError(f"Unknown protocol condition: {condition}")
     return SimConfig(**data)

@@ -1,4 +1,4 @@
-﻿"""Memory resonance field 鈥?continuous recall without cutoffs."""
+"""Memory resonance field 鈥?continuous recall without cutoffs."""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.world.models import Agent, EventAtom
+from src.world.models import Agent, AgentRole, EventAtom
+from src.world.organization import can_directly_observe, primary_authority
 
 from .math_utils import (
     clamp,
@@ -115,11 +116,13 @@ def _memory_counter(agent: Agent) -> int:
     return len(agent.memory)
 
 
-def _infer_target(event: EventAtom, agent: Agent) -> str:
+def _infer_target(event: EventAtom, agent: Agent, world: Any | None = None) -> str:
     if event.type in ("authorship_promise", "authorship_ambiguity", "authorship_draft"):
+        if world is not None:
+            return primary_authority(world, agent) or event.source
         return "pi"
     if event.type == "rival_preprint":
-        return "rival_lab_h"
+        return event.source if event.source else "rival_lab_h"
     if event.source != agent.id and event.source in event.targets:
         return event.source
     for t in event.targets:
@@ -147,17 +150,19 @@ def compute_valence(agent: Agent, event: EventAtom, content_type: str) -> float:
     elif content_type == "integrity_signal":
         role_expectation = -(agent.beliefs.academic_integrity_risk - 0.5)
 
-    if event.type == "authorship_ambiguity" and agent.id == "phd_a":
-        role_expectation += 0.35
-    if event.type == "authorship_ambiguity" and agent.id == "phd_b":
-        role_expectation -= 0.55
-    if event.type == "authorship_ambiguity" and agent.id == "pi":
-        role_expectation -= 0.10
-    if event.type == "public_praise" and event.payload.get("praised_agent") == "phd_b":
-        if agent.id == "phd_a":
-            role_expectation += 0.25
-        if agent.id == "phd_b":
+    if event.type == "authorship_ambiguity":
+        if agent.id == "phd_a" or agent.role == AgentRole.IDEA_ORIGINATOR:
+            role_expectation += 0.35
+        elif agent.id == "phd_b" or agent.role == AgentRole.EXPERIMENTER:
+            role_expectation -= 0.55
+        elif agent.role == AgentRole.PI:
+            role_expectation -= 0.10
+    praised = event.payload.get("praised_agent")
+    if event.type == "public_praise" and praised:
+        if agent.id == praised:
             role_expectation -= 0.30
+        elif agent.id == "phd_a" or agent.role == AgentRole.IDEA_ORIGINATOR:
+            role_expectation += 0.25
 
     observed = framing_signal * salience
     if event.type in ("authorship_promise",):
@@ -170,6 +175,16 @@ def compute_valence(agent: Agent, event: EventAtom, content_type: str) -> float:
     return tanh_bounded(prediction_error * sensitivity, scale=1.6)
 
 
+def _fallback_interpretation(agent: Agent, event: EventAtom, valence: float, content_type: str) -> str:
+    if valence < -0.25:
+        tone = "threatened"
+    elif valence > 0.25:
+        tone = "reassured"
+    else:
+        tone = "watchful"
+    return f"I felt {tone} about {event.type} as {content_type}."[:240]
+
+
 def _interpretation_via_llm(
     llm: Any,
     agent: Agent,
@@ -180,11 +195,17 @@ def _interpretation_via_llm(
     from src.engine.prompts import MEMORY_INTERPRETATION_SYSTEM, build_memory_interpretation_prompt
 
     user = build_memory_interpretation_prompt(agent, event, valence, content_type)
-    result = llm.complete_json(MEMORY_INTERPRETATION_SYSTEM, user)
-    text = result.get("interpretation", "")
-    if not text or not isinstance(text, str):
-        raise ValueError("LLM memory interpretation missing 'interpretation' field")
-    return text.strip()[:240]
+    try:
+        result = llm.complete_json(MEMORY_INTERPRETATION_SYSTEM, user)
+        text = result.get("interpretation", "")
+        if text and isinstance(text, str):
+            return text.strip()[:240]
+    except Exception as exc:
+        from src.engine.llm_adapter import QuotaExhaustedError
+
+        if isinstance(exc, QuotaExhaustedError):
+            raise
+    return _fallback_interpretation(agent, event, valence, content_type)
 
 
 def initial_strength(event: EventAtom, evidence_quality: float, valence: float) -> float:
@@ -200,14 +221,12 @@ def write_memory(
     event: EventAtom,
     current_round: int,
     llm_adapter: Any | None = None,
+    *,
+    channel: str = "direct",
+    world: Any | None = None,
 ) -> MemoryRecord | None:
-    if agent.id not in event.targets and event.source != agent.id:
-        if "project" in event.targets and agent.id in (
-            "reviewer_1", "reviewer_2", "reviewer_3", "rival_lab_h"
-        ):
-            pass
-        elif agent.id not in event.targets:
-            return None
+    if channel == "direct" and not can_directly_observe(agent, event):
+        return None
 
     content_type = CONTENT_TYPE_BY_EVENT.get(event.type, "credit_claim")
     if event.type == "authorship_promise":
@@ -222,6 +241,9 @@ def write_memory(
 
     valence = compute_valence(agent, event, content_type)
     evidence_quality = truth_status_precision(event.truth_status) * (0.6 + 0.4 * event.memory_salience)
+    if channel == "rumor":
+        evidence_quality *= 0.55
+        valence *= 0.72
     s0 = initial_strength(event, evidence_quality, valence)
 
     if llm_adapter is None:
@@ -230,6 +252,8 @@ def write_memory(
         llm_adapter = get_adapter()
 
     interpretation = _interpretation_via_llm(llm_adapter, agent, event, valence, content_type)
+    if channel == "rumor":
+        interpretation = ("Heard second-hand: " + interpretation)[:240]
 
     idx = _memory_counter(agent) + 1
     record = MemoryRecord(
@@ -238,7 +262,7 @@ def write_memory(
         round=current_round,
         event_ref=event.event_id,
         content_type=content_type,
-        target=_infer_target(event, agent),
+        target=_infer_target(event, agent, world),
         valence=valence,
         strength=s0,
         strength_0=s0,
@@ -249,7 +273,9 @@ def write_memory(
         behavioral_hooks=list(BEHAVIORAL_HOOKS.get(content_type, ["document_contribution"])),
         objective_fact_ref=f"{event.event_id}.objective_fact",
     )
-    agent.memory.append(record.to_dict())
+    payload = record.to_dict()
+    payload["channel"] = channel
+    agent.memory.append(payload)
     return record
 
 

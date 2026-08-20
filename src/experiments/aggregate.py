@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.experiments.conditions import primary_outcome_for, report_outcomes_for
 from src.experiments.metrics import bootstrap_ci, mediation_fraction, welch_t_stat
 from src.experiments.runner import run_single
 from src.world.loader import PROJECT_ROOT
@@ -26,10 +27,11 @@ def aggregate_experiment(
     experiment_id: str,
     *,
     batch_path: Path | str | None = None,
-    outcome: str = "protest_authorship",
+    outcome: str | None = None,
     baseline_condition: str | None = None,
 ) -> dict[str, Any]:
     exp = experiment_id.upper()
+    outcome = outcome or primary_outcome_for(exp)
     if batch_path:
         rows = load_batch_summary(batch_path)
         rows = [r for r in rows if r.get("experiment_id", exp) == exp or r.get("experiment_id") is None]
@@ -42,11 +44,16 @@ def aggregate_experiment(
     by_condition: dict[str, list[float]] = {}
     for row in rows:
         cid = row.get("condition_id", "")
-        val = float(row.get(outcome, 0))
+        if outcome not in row:
+            continue
+        val = float(row.get(outcome, 0) or 0)
         by_condition.setdefault(cid, []).append(val)
 
     if not by_condition:
-        raise ValueError(f"No rows to aggregate for experiment {exp}; run batch with at least one seed.")
+        raise ValueError(
+            f"No rows with outcome `{outcome}` for experiment {exp}; "
+            "rebuild the batch summary or run batch with the current ANALYSIS_OUTCOMES."
+        )
 
     baseline = baseline_condition or sorted(by_condition.keys())[0]
     summary: dict[str, Any] = {
@@ -62,16 +69,20 @@ def aggregate_experiment(
     for cid, vals in sorted(by_condition.items()):
         mean, lo, hi = bootstrap_ci(vals)
         ate = mean - base_mean if cid != baseline else 0.0
+        n = len(vals)
         summary["conditions"][cid] = {
-            "n": len(vals),
+            "n": n,
             "mean": mean,
             "ci_low": lo,
             "ci_high": hi,
             "ate_vs_baseline": ate,
             "welch_t_vs_baseline": welch_t_stat(vals, base_vals) if cid != baseline else 0.0,
+            "ci_note": "n<2 bootstrap CI is vacuous" if n < 2 else "",
         }
 
     summary["baseline_stats"] = {"mean": base_mean, "ci_low": base_lo, "ci_high": base_hi, "n": len(base_vals)}
+    if len(base_vals) < 2:
+        summary["note"] = "n<2: ATE/CI/t are descriptive only and should not be treated as inference."
     return summary
 
 
@@ -82,17 +93,17 @@ def aggregate_experiment_multi(
     outcomes: list[str] | None = None,
     baseline_condition: str | None = None,
 ) -> dict[str, Any]:
-    outcomes = outcomes or [
-        "trust_pi_final",
-        "pi_fairness_r52",
-        "authorship_escalation_score",
-        "authorship_escalation_potential",
-        "memory_authorship_cluster_strength",
-        "post_r52_compliance",
-    ]
+    exp = experiment_id.upper()
+    outcomes = outcomes or report_outcomes_for(exp)
+    available = set()
+    rows = load_batch_summary(batch_path)
+    for row in rows:
+        available.update(row.keys())
+    selected = [outcome for outcome in outcomes if outcome in available]
     return {
-        "experiment_id": experiment_id.upper(),
+        "experiment_id": exp,
         "batch_path": str(batch_path),
+        "primary_outcome": primary_outcome_for(exp),
         "outcomes": {
             outcome: aggregate_experiment(
                 experiment_id,
@@ -100,7 +111,7 @@ def aggregate_experiment_multi(
                 outcome=outcome,
                 baseline_condition=baseline_condition,
             )
-            for outcome in outcomes
+            for outcome in selected
         },
     }
 
@@ -128,6 +139,7 @@ def compare_conditions(
         "welch_t": welch_t_stat(b_vals, a_vals),
         "n_a": len(a_vals),
         "n_b": len(b_vals),
+        "ci_note": "n<2 bootstrap CI is vacuous" if min(len(a_vals), len(b_vals)) < 2 else "",
     }
 
 
@@ -161,17 +173,29 @@ def write_aggregate_report(
         candidate = out_dir / f"batch_{experiment_id.upper()}_summary.json"
         if candidate.exists():
             batch_path = candidate
-    if batch_path:
-        summary = aggregate_experiment(experiment_id, batch_path=batch_path)
-    else:
-        summary = aggregate_experiment(experiment_id)
+    if batch_path is None:
+        batch_path = PROJECT_ROOT / "output" / "runs" / f"batch_{experiment_id.upper()}_summary.json"
+        if not batch_path.exists():
+            nested = PROJECT_ROOT / "output" / "runs" / f"batch_{experiment_id.upper()}" / f"batch_{experiment_id.upper()}_summary.json"
+            if nested.exists():
+                batch_path = nested
+    multi = aggregate_experiment_multi(experiment_id, batch_path=batch_path)
+    if not multi["outcomes"]:
+        raise ValueError(f"No aggregable outcomes in {batch_path}")
+    summary = multi["outcomes"].get(multi["primary_outcome"])
+    if summary is None:
+        summary = next(iter(multi["outcomes"].values()))
     path = out_dir / f"aggregate_{experiment_id.upper()}.json"
-    path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    path.write_text(json.dumps(multi, indent=2, ensure_ascii=False), encoding="utf-8")
 
     md_lines = [
         f"# LabWars Aggregate — Experiment {experiment_id.upper()}",
         "",
-        f"Outcome: `{summary['outcome']}` | Baseline: `{summary['baseline']}`",
+        f"Primary outcome: `{summary['outcome']}` | Baseline: `{summary['baseline']}`",
+    ]
+    if summary.get("note"):
+        md_lines += ["", f"> {summary['note']}"]
+    md_lines += [
         "",
         "| Condition | N | Mean | 95% CI | ATE vs baseline | t |",
         "|-----------|---|------|--------|-----------------|---|",
@@ -182,6 +206,17 @@ def write_aggregate_report(
             f"[{stats['ci_low']:.3f}, {stats['ci_high']:.3f}] | "
             f"{stats['ate_vs_baseline']:+.3f} | {stats['welch_t_vs_baseline']:.2f} |"
         )
+
+    for outcome, block in multi["outcomes"].items():
+        if outcome == summary["outcome"]:
+            continue
+        md_lines += ["", f"## {outcome}", ""]
+        md_lines.append("| Condition | N | Mean | ATE vs baseline |")
+        md_lines.append("|-----------|---|------|-----------------|")
+        for cid, stats in block["conditions"].items():
+            md_lines.append(
+                f"| {cid} | {stats['n']} | {stats['mean']:.3f} | {stats['ate_vs_baseline']:+.3f} |"
+            )
     md_path = out_dir / f"aggregate_{experiment_id.upper()}.md"
     md_path.write_text("\n".join(md_lines), encoding="utf-8")
     return md_path

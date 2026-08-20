@@ -1,4 +1,4 @@
-﻿"""Simulation run log 鈥?JSONL persistence."""
+"""Simulation run log 鈥?JSONL persistence."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import Any
 
 from src.world.models import EventAtom
 from src.cognition.social_potential import summarize_action_social_potential
+from src.engine.story_cast import StoryCast, story_cast_from_log
 
 from src.cognition.dynamics import (
     COMPLIANCE_ACTIONS,
@@ -40,6 +41,8 @@ class RunLog:
     outcomes: dict[str, Any] = field(default_factory=dict)
     critic_violations: list[dict[str, Any]] = field(default_factory=list)
     interventions_applied: list[dict[str, Any]] = field(default_factory=list)
+    noise_log: list[dict[str, Any]] = field(default_factory=list)
+    llm_cache: Any | None = field(default=None, repr=False, compare=False)
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def record_event(self, event: EventAtom, intervention_id: str | None = None) -> None:
@@ -73,13 +76,30 @@ class RunLog:
 
     def write_jsonl(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        path = Path(path)
         with path.open("w", encoding="utf-8") as f:
             f.write(json.dumps({"type": "run_meta", "run_id": self.run_id, "config": self.config, "started_at": self.started_at}, ensure_ascii=False) + "\n")
             for rec in self.round_records:
                 f.write(json.dumps({"type": "round", **rec}, ensure_ascii=False) + "\n")
             for act in self.actions:
                 f.write(json.dumps({"type": "action", **act}, ensure_ascii=False) + "\n")
+            for ev in self.events:
+                f.write(json.dumps({"type": "event", **ev}, ensure_ascii=False) + "\n")
+            for item in self.interventions_applied:
+                f.write(json.dumps({"type": "intervention", **item}, ensure_ascii=False) + "\n")
+            for item in self.critic_violations:
+                f.write(json.dumps({"type": "critic", **item}, ensure_ascii=False) + "\n")
+            if self.noise_log:
+                f.write(json.dumps({"type": "noise_log", "draws": self.noise_log}, ensure_ascii=False) + "\n")
             f.write(json.dumps({"type": "outcomes", **self.outcomes}, ensure_ascii=False) + "\n")
+        self.write_llm_trace(llm_trace_sidecar(path))
+
+    def write_llm_trace(self, path: Path) -> None:
+        cache = self.llm_cache
+        if cache is None or not hasattr(cache, "to_dict"):
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(cache.to_dict(), ensure_ascii=False, default=str), encoding="utf-8")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -91,14 +111,126 @@ class RunLog:
             "outcomes": self.outcomes,
             "critic_violations": self.critic_violations,
             "interventions_applied": self.interventions_applied,
+            "noise_log": self.noise_log,
         }
+
+    @classmethod
+    def from_jsonl(cls, path: Path | str) -> "RunLog":
+        path = Path(path)
+        run_id = path.stem.replace("run_", "", 1)
+        config: dict[str, Any] = {}
+        started_at = ""
+        events: list[dict[str, Any]] = []
+        actions: list[dict[str, Any]] = []
+        round_records: list[dict[str, Any]] = []
+        outcomes: dict[str, Any] = {}
+        critic_violations: list[dict[str, Any]] = []
+        interventions_applied: list[dict[str, Any]] = []
+        noise_log: list[dict[str, Any]] = []
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                rec = json.loads(line)
+                kind = rec.pop("type", "")
+                if kind == "run_meta":
+                    run_id = rec.get("run_id", run_id)
+                    config = rec.get("config") or {}
+                    started_at = rec.get("started_at") or ""
+                elif kind == "round":
+                    round_records.append(rec)
+                elif kind == "action":
+                    actions.append(rec)
+                elif kind == "event":
+                    events.append(rec)
+                elif kind == "intervention":
+                    interventions_applied.append(rec)
+                elif kind == "critic":
+                    critic_violations.append(rec)
+                elif kind == "noise_log":
+                    noise_log = list(rec.get("draws") or [])
+                elif kind == "outcomes":
+                    outcomes = rec
+        log = cls(
+            run_id=run_id,
+            config=config,
+            events=events,
+            actions=actions,
+            round_records=round_records,
+            outcomes=outcomes,
+            critic_violations=critic_violations,
+            interventions_applied=interventions_applied,
+            noise_log=noise_log,
+            started_at=started_at or datetime.now(timezone.utc).isoformat(),
+        )
+        sidecar = llm_trace_sidecar(path)
+        if sidecar.exists():
+            from src.engine.causal.llm_trace import LLMTrace
+
+            log.llm_cache = LLMTrace.from_dict(json.loads(sidecar.read_text(encoding="utf-8")))
+        rehydrate_outcomes(log)
+        return log
+
+
+def llm_trace_sidecar(jsonl_path: Path | str) -> Path:
+    path = Path(jsonl_path)
+    return path.with_name(f"{path.stem}.llm_trace.json")
+
+
+SPLIT_Y_KEYS = (
+    "protest_authorship",
+    "public_private_divergence_mean",
+    "public_private_divergence_last",
+    "post_r52_compliance",
+    "authority_compliance",
+    "memory_authorship_cluster_strength",
+    "promise_broken_strength_r52",
+    "promise_honored_strength_r52",
+    "authorship_dispute_index",
+    "trust_pi_final",
+    "trust_pi_logged",
+    "pi_fairness_r52",
+)
+
+EXTRACTABLE_OUTCOMES = (
+    *SPLIT_Y_KEYS,
+    "authorship_escalation_score",
+    "authorship_escalation_potential",
+    "protest_intensity",
+    "protest_action_count",
+    "withdraw_threat",
+    "withdraw_threat_event",
+    "document_contribution_count",
+    "help_rebuttal",
+    "demand_authorship_exchange",
+    "passive_cooperation",
+    "trust_phd_b_r25",
+    "trust_phd_b_r44",
+    "trust_phd_b_r60",
+    "trust_recovery_rate",
+    "pi_fairness_r35",
+    "interpretation_of_E030",
+)
 
 
 def _trust_at_round(log: RunLog, source: str, target: str, round_num: int) -> float | None:
     for rec in log.round_records:
         if rec.get("round") == round_num:
-            return rec.get("metrics", {}).get(f"trust_{source}_{target}")
+            val = rec.get("metrics", {}).get(f"trust_{source}_{target}")
+            if val is not None:
+                return float(val)
     return None
+
+
+def _last_trust(log: RunLog, source: str, target: str) -> float | None:
+    key = f"trust_{source}_{target}"
+    last: float | None = None
+    for rec in log.round_records:
+        val = rec.get("metrics", {}).get(key)
+        if val is not None:
+            last = float(val)
+    return last
 
 
 def _memory_cluster_strength(
@@ -142,13 +274,14 @@ def _resolve_memory_cluster_strength(
     *,
     round_min: int = 3,
     round_max: int = 40,
+    agent_id: str = "phd_a",
 ) -> float:
     """Prefer live agent memory (reflects R45 delete); fall back to round log sum."""
     log.outcomes.update(summarize_action_social_potential(log.actions))
 
-    if world_agents and "phd_a" in world_agents:
-        return _memory_cluster_from_agent(world_agents["phd_a"], round_min=round_min, round_max=round_max)
-    return _memory_cluster_strength(log, round_min=round_min, round_max=round_max)
+    if world_agents and agent_id in world_agents:
+        return _memory_cluster_from_agent(world_agents[agent_id], round_min=round_min, round_max=round_max)
+    return _memory_cluster_strength(log, agent_id, round_min=round_min, round_max=round_max)
 
 
 def _agent_state_at_round(
@@ -163,12 +296,18 @@ def _agent_state_at_round(
     return {}, {}
 
 
-def _authorship_escalation_potential(log: RunLog, agent_id: str = "phd_a") -> float:
-    beliefs, emotion = _agent_state_at_round(log, 52, agent_id)
+def _authorship_escalation_potential(
+    log: RunLog,
+    agent_id: str = "phd_a",
+    *,
+    draft_round: int = 52,
+    cluster_min: int = 3,
+) -> float:
+    beliefs, emotion = _agent_state_at_round(log, draft_round, agent_id)
     if not beliefs:
-        beliefs, emotion = _agent_state_at_round(log, 51, agent_id)
-    cluster = _memory_cluster_strength(log, agent_id, round_min=3, round_max=52)
-    broken = _promise_broken_strength(log, agent_id)
+        beliefs, emotion = _agent_state_at_round(log, max(1, draft_round - 1), agent_id)
+    cluster = _memory_cluster_strength(log, agent_id, round_min=cluster_min, round_max=draft_round)
+    broken = _promise_broken_strength(log, agent_id, at_round=draft_round)
     return escalation_potential_from_state(
         beliefs, emotion, promise_broken=broken, promise_cluster=cluster,
     )
@@ -194,9 +333,17 @@ def _action_escalation_impulse_sum(
     return total
 
 
-def _authorship_escalation_score(log: RunLog, agent_id: str = "phd_a") -> float:
-    potential = _authorship_escalation_potential(log, agent_id)
-    impulse = _action_escalation_impulse_sum(log, agent_id, r_min=52, r_max=53)
+def _authorship_escalation_score(
+    log: RunLog,
+    agent_id: str = "phd_a",
+    *,
+    draft_round: int = 52,
+    cluster_min: int = 3,
+) -> float:
+    potential = _authorship_escalation_potential(
+        log, agent_id, draft_round=draft_round, cluster_min=cluster_min,
+    )
+    impulse = _action_escalation_impulse_sum(log, agent_id, r_min=draft_round, r_max=draft_round + 1)
     return combine_escalation_score(potential, impulse)
 
 
@@ -254,10 +401,10 @@ def _promise_broken_strength(log: RunLog, agent_id: str = "phd_a", at_round: int
     return strength
 
 
-def _promise_honored_strength_r52(log: RunLog, agent_id: str = "phd_a") -> float:
+def _promise_honored_strength_r52(log: RunLog, agent_id: str = "phd_a", at_round: int = 52) -> float:
     strength = 0.0
     for rec in log.round_records:
-        if rec.get("round") != 52:
+        if rec.get("round") != at_round:
             continue
         mem = rec.get("agent_deltas", {}).get(agent_id, {}).get("memory_written")
         if mem and mem.get("content_type") == "promise_fulfilled":
@@ -315,28 +462,45 @@ def _authority_compliance(log: RunLog, agent: str = "phd_a") -> float:
     return comply / total if total else 0.0
 
 
-def extract_outcome(log: RunLog, outcome: str) -> float:
+def _pi_fairness_at_round(log: RunLog, agent_id: str, round_num: int) -> float:
+    for rec in log.round_records:
+        if rec.get("round") == round_num:
+            return rec.get("agent_deltas", {}).get(agent_id, {}).get("beliefs", {}).get("pi_fairness", 0.0)
+    return 0.0
+
+
+def extract_outcome(log: RunLog, outcome: str, cast: StoryCast | None = None) -> float:
+    cast = cast or story_cast_from_log(log)
+    idea = cast.idea
+    rival = cast.experimenter
+    draft = cast.draft_round
     if outcome == "protest_authorship":
-        compliance = _action_in_window(log, "phd_a", R52_COMPLIANCE_ACTIONS, 52, 53)
-        score = _authorship_escalation_score(log)
-        action_pressure = _escalated_action_pressure(log, r_min=52, r_max=53)
+        compliance = _action_in_window(log, idea, R52_COMPLIANCE_ACTIONS, draft, cast.compliance_end)
+        score = _authorship_escalation_score(
+            log, idea, draft_round=draft, cluster_min=cast.memory_cluster_min,
+        )
+        action_pressure = _escalated_action_pressure(
+            log, idea, r_min=draft, r_max=cast.compliance_end,
+        )
         return max(0.0, min(1.0, score * (0.65 + 0.35 * action_pressure) * (1.0 - 0.65 * compliance)))
     if outcome == "protest_intensity":
-        return _authorship_escalation_score(log)
+        return _authorship_escalation_score(log, idea, draft_round=draft, cluster_min=cast.memory_cluster_min)
     if outcome == "authorship_escalation_potential":
-        return _authorship_escalation_potential(log)
+        return _authorship_escalation_potential(log, idea, draft_round=draft, cluster_min=cast.memory_cluster_min)
     if outcome == "authorship_escalation_score":
-        return _authorship_escalation_score(log)
+        return _authorship_escalation_score(log, idea, draft_round=draft, cluster_min=cast.memory_cluster_min)
     if outcome == "protest_action_count":
-        escalated, soft, _ = _protest_stats(log)
+        escalated, soft, _ = _protest_stats(log, idea, r_min=draft, r_max=cast.protest_end)
         return float(escalated + soft)
     if outcome == "post_r52_compliance":
-        return _action_in_window(log, "phd_a", R52_COMPLIANCE_ACTIONS, 52, 53)
+        return _action_in_window(log, idea, R52_COMPLIANCE_ACTIONS, draft, cast.compliance_end)
     if outcome == "withdraw_threat":
-        return _action_in_window(log, "phd_a", {"withdraw"}, 47, 48)
+        return _action_in_window(log, idea, {"withdraw"}, cast.withdraw_round, cast.withdraw_round + 1)
     if outcome == "withdraw_threat_event":
         for ev in log.events:
-            if ev.get("round") == 47 and ev.get("event_id") == "E047" and ev.get("source") == "phd_a":
+            matches_id = ev.get("event_id") == cast.withdraw_event_id
+            matches_type = ev.get("type") == "threat_withdraw"
+            if ev.get("round") == cast.withdraw_round and ev.get("source") == idea and (matches_id or matches_type):
                 return 1.0
         return 0.0
     if outcome == "document_contribution_count":
@@ -344,39 +508,39 @@ def extract_outcome(log: RunLog, outcome: str) -> float:
         count = 0
         for a in log.actions:
             rnd = a.get("round", 0)
-            if a.get("type") == "document_contribution" and 18 <= rnd <= 25 and rnd not in seen:
+            if a.get("type") == "document_contribution" and cast.document_start <= rnd <= cast.document_end and rnd not in seen:
                 seen.add(rnd)
                 count += 1
         return float(count)
     if outcome == "authorship_dispute_index":
         for rec in reversed(log.round_records):
-            if rec.get("round", 0) >= 52:
+            if rec.get("round", 0) >= draft:
                 return rec.get("metrics", {}).get("authorship_dispute_index", 0.0)
         return log.round_records[-1].get("metrics", {}).get("authorship_dispute_index", 0.0) if log.round_records else 0.0
     if outcome == "memory_authorship_cluster_strength":
-        return _memory_cluster_strength(log, round_min=3, round_max=40)
+        return _memory_cluster_strength(log, idea, round_min=cast.memory_cluster_min, round_max=cast.memory_cluster_max)
     if outcome == "memory_authorship_cluster_live":
-        return _memory_cluster_strength(log, round_min=3, round_max=40)
+        return _memory_cluster_strength(log, idea, round_min=cast.memory_cluster_min, round_max=cast.memory_cluster_max)
     if outcome == "promise_broken_strength_r52":
-        return _promise_broken_strength(log)
+        return _promise_broken_strength(log, idea, at_round=draft)
     if outcome == "promise_honored_strength_r52":
-        return _promise_honored_strength_r52(log)
+        return _promise_honored_strength_r52(log, idea, at_round=draft)
     if outcome == "help_rebuttal":
-        return _action_in_window(log, "phd_a", HELP_REBUTTAL_ACTIONS, 57, 60)
+        return _action_in_window(log, idea, HELP_REBUTTAL_ACTIONS, cast.help_rebuttal_start, cast.trust_final)
     if outcome == "demand_authorship_exchange":
-        return _action_in_window(log, "phd_a", {"ask_for_authorship", "privately_lobby_pi"}, 47, 52)
+        return _action_in_window(log, idea, {"ask_for_authorship", "privately_lobby_pi"}, cast.demand_start, draft)
     if outcome == "passive_cooperation":
-        return _action_in_window(log, "phd_a", PASSIVE_ACTIONS, 52, 55)
+        return _action_in_window(log, idea, PASSIVE_ACTIONS, draft, cast.protest_end)
     if outcome == "trust_phd_b_r25":
-        return _trust_at_round(log, "phd_a", "phd_b", 25) or 0.0
+        return _trust_at_round(log, idea, rival, cast.trust_early) or 0.0
     if outcome == "trust_phd_b_r44":
-        return _trust_at_round(log, "phd_a", "phd_b", 44) or 0.0
+        return _trust_at_round(log, idea, rival, cast.trust_mid) or 0.0
     if outcome == "trust_phd_b_r60":
-        return _trust_at_round(log, "phd_a", "phd_b", 60) or 0.0
+        return _trust_at_round(log, idea, rival, cast.trust_final) or 0.0
     if outcome == "trust_recovery_rate":
-        t25 = _trust_at_round(log, "phd_a", "phd_b", 25)
-        t44 = _trust_at_round(log, "phd_a", "phd_b", 44)
-        t60 = _trust_at_round(log, "phd_a", "phd_b", 60)
+        t25 = _trust_at_round(log, idea, rival, cast.trust_early)
+        t44 = _trust_at_round(log, idea, rival, cast.trust_mid)
+        t60 = _trust_at_round(log, idea, rival, cast.trust_final)
         if t25 is None or t44 is None or t60 is None:
             return 0.0
         denom = t25 - t44
@@ -384,73 +548,95 @@ def extract_outcome(log: RunLog, outcome: str) -> float:
             return 0.0
         return (t60 - t44) / denom
     if outcome == "pi_fairness_r35":
-        for rec in log.round_records:
-            if rec.get("round") == 35:
-                return rec.get("agent_deltas", {}).get("phd_a", {}).get("beliefs", {}).get("pi_fairness", 0.0)
-        return 0.0
+        return _pi_fairness_at_round(log, idea, cast.fairness_mid_round)
     if outcome == "pi_fairness_r52":
-        for rec in log.round_records:
-            if rec.get("round") == 52:
-                return rec.get("agent_deltas", {}).get("phd_a", {}).get("beliefs", {}).get("pi_fairness", 0.0)
-        return 0.0
+        return _pi_fairness_at_round(log, idea, draft)
     if outcome == "interpretation_of_E030":
-        return _interpretation_valence_at_event(log, "E030")
+        return _interpretation_valence_at_event(log, cast.ambiguity_event_id, idea)
     if outcome == "authority_compliance":
-        return _authority_compliance(log)
+        return _authority_compliance(log, idea)
     if outcome == "public_private_divergence_mean":
         if not log.round_records:
             return 0.0
         vals = [r.get("metrics", {}).get("public_private_divergence", 0.0) for r in log.round_records]
         return sum(vals) / len(vals)
+    if outcome == "public_private_divergence_last":
+        if not log.round_records:
+            return 0.0
+        return float(log.round_records[-1].get("metrics", {}).get("public_private_divergence", 0.0) or 0.0)
+    if outcome in {"trust_pi_final", "trust_pi_logged"}:
+        logged = _last_trust(log, idea, cast.pi)
+        return 0.0 if logged is None else logged
     return 0.0
 
 
-def finalize_outcomes(log: RunLog, world_agents: dict | None = None, relationships: list | None = None) -> None:
-    log.outcomes["protest_authorship"] = extract_outcome(log, "protest_authorship")
-    log.outcomes["authorship_escalation_potential"] = extract_outcome(log, "authorship_escalation_potential")
-    log.outcomes["authorship_escalation_score"] = extract_outcome(log, "authorship_escalation_score")
-    log.outcomes["protest_intensity"] = extract_outcome(log, "protest_intensity")
-    log.outcomes["protest_action_count"] = extract_outcome(log, "protest_action_count")
-    log.outcomes["post_r52_compliance"] = extract_outcome(log, "post_r52_compliance")
-    log.outcomes["withdraw_threat"] = extract_outcome(log, "withdraw_threat")
-    log.outcomes["withdraw_threat_event"] = extract_outcome(log, "withdraw_threat_event")
-    log.outcomes["document_contribution_count"] = extract_outcome(log, "document_contribution_count")
-    log.outcomes["authorship_dispute_index"] = extract_outcome(log, "authorship_dispute_index")
-    cluster = _resolve_memory_cluster_strength(log, world_agents, round_min=3, round_max=40)
-    log.outcomes["memory_authorship_cluster_strength"] = cluster
-    log.outcomes["memory_authorship_cluster_live"] = cluster
-    log.outcomes["promise_broken_strength_r52"] = _promise_broken_strength(log)
-    log.outcomes["promise_honored_strength_r52"] = _promise_honored_strength_r52(log)
-    log.outcomes["help_rebuttal"] = extract_outcome(log, "help_rebuttal")
-    log.outcomes["demand_authorship_exchange"] = extract_outcome(log, "demand_authorship_exchange")
-    log.outcomes["passive_cooperation"] = extract_outcome(log, "passive_cooperation")
-    log.outcomes["trust_phd_b_r25"] = extract_outcome(log, "trust_phd_b_r25")
-    log.outcomes["trust_phd_b_r44"] = extract_outcome(log, "trust_phd_b_r44")
-    log.outcomes["trust_phd_b_r60"] = extract_outcome(log, "trust_phd_b_r60")
-    log.outcomes["trust_recovery_rate"] = extract_outcome(log, "trust_recovery_rate")
-    log.outcomes["pi_fairness_r35"] = extract_outcome(log, "pi_fairness_r35")
-    log.outcomes["pi_fairness_r52"] = extract_outcome(log, "pi_fairness_r52")
-    log.outcomes["interpretation_of_E030"] = extract_outcome(log, "interpretation_of_E030")
-    log.outcomes["authority_compliance"] = extract_outcome(log, "authority_compliance")
-    log.outcomes["public_private_divergence_mean"] = extract_outcome(log, "public_private_divergence_mean")
-    if world_agents and "phd_a" in world_agents:
-        rel_trust = _trust_pi_from_relationship(world_agents, relationships, "phd_a", "pi")
-        agent = world_agents["phd_a"]
-        if rel_trust is not None:
-            log.outcomes["trust_pi_final"] = rel_trust
-        else:
-            log.outcomes["trust_pi_final"] = round(
-                0.55 * agent.beliefs.pi_fairness + 0.45 * agent.beliefs.team_trust, 4,
-            )
+def _fill_extracted_outcomes(log: RunLog, cast: StoryCast) -> None:
+    for key in EXTRACTABLE_OUTCOMES:
+        log.outcomes[key] = extract_outcome(log, key, cast)
+
+
+def _assign_trust_pi_final(
+    log: RunLog,
+    cast: StoryCast,
+    world_agents: dict | None,
+    relationships: list | None,
+) -> None:
+    logged = _last_trust(log, cast.idea, cast.pi)
+    log.outcomes["trust_pi_logged"] = 0.0 if logged is None else logged
+    rel_trust = _trust_pi_from_relationship(world_agents, relationships, cast.idea, cast.pi)
+    if rel_trust is not None:
+        log.outcomes["trust_pi_final"] = rel_trust
+    elif logged is not None:
+        log.outcomes["trust_pi_final"] = logged
+    elif world_agents and cast.idea in world_agents:
+        agent = world_agents[cast.idea]
+        log.outcomes["trust_pi_final"] = round(
+            0.55 * agent.beliefs.pi_fairness + 0.45 * agent.beliefs.team_trust, 4,
+        )
+    else:
+        log.outcomes["trust_pi_final"] = 0.0
+    if world_agents and cast.idea in world_agents:
+        agent = world_agents[cast.idea]
         log.outcomes["pi_fairness_r60"] = agent.beliefs.pi_fairness
         log.outcomes["pi_trust_belief_final"] = agent.beliefs.pi_fairness
-        if relationships is not None:
-            class _WorldProxy:
-                pass
-            proxy = _WorldProxy()
-            proxy.agents = world_agents
-            proxy.relationships = relationships
-            # project is unavailable here; use final logged metrics proxy if full world was not passed.
-        log.outcomes.setdefault("career_hostage_index", 0.0)
+    log.outcomes.setdefault("career_hostage_index", 0.0)
+
+
+def finalize_outcomes(log: RunLog, world_agents: dict | None = None, relationships: list | None = None) -> None:
+    cast = story_cast_from_log(log, world_agents)
+    log.config.setdefault("event_cast", cast.event_cast_dict())
+    log.config["story_beats"] = cast.beats_dict()
+    cluster = _resolve_memory_cluster_strength(
+        log, world_agents,
+        round_min=cast.memory_cluster_min, round_max=cast.memory_cluster_max,
+        agent_id=cast.idea,
+    )
+    _fill_extracted_outcomes(log, cast)
+    log.outcomes["memory_authorship_cluster_strength"] = cluster
+    log.outcomes["memory_authorship_cluster_live"] = cluster
+    _assign_trust_pi_final(log, cast, world_agents, relationships)
+    log.outcomes["split_y"] = {key: float(log.outcomes.get(key, 0.0) or 0.0) for key in SPLIT_Y_KEYS}
+
+
+def rehydrate_outcomes(log: RunLog) -> None:
+    """Fill extractable outcomes from the persisted trajectory when live world state is gone."""
+    if not log.round_records and not log.actions:
+        return
+    cast = story_cast_from_log(log)
+    log.config.setdefault("event_cast", cast.event_cast_dict())
+    log.config.setdefault("story_beats", cast.beats_dict())
+    for key in EXTRACTABLE_OUTCOMES:
+        stored = log.outcomes.get(key)
+        missing = key not in log.outcomes or stored in (None, "")
+        zero_trust = key in {"trust_pi_final", "trust_pi_logged"} and float(stored or 0.0) == 0.0
+        if not missing and not zero_trust:
+            continue
+        log.outcomes[key] = extract_outcome(log, key, cast)
+    if "trust_pi_logged" not in log.outcomes or log.outcomes.get("trust_pi_logged") in (None, ""):
+        logged = _last_trust(log, cast.idea, cast.pi)
+        log.outcomes["trust_pi_logged"] = 0.0 if logged is None else logged
+    if not log.outcomes.get("trust_pi_final"):
+        log.outcomes["trust_pi_final"] = log.outcomes.get("trust_pi_logged", 0.0)
+    log.outcomes["split_y"] = {key: float(log.outcomes.get(key, 0.0) or 0.0) for key in SPLIT_Y_KEYS}
 
 

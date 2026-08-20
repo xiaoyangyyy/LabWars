@@ -1,4 +1,4 @@
-﻿action_field:
+action_field:
   version: 1
   description: >
     Calibratable continuous action-field parameters. These weights are not
@@ -9,6 +9,7 @@
   avoided_action_penalty: 0.08
   emotional_action_bonus: 0.05
   talk_to_alumni_time_penalty: 0.08
+  social_potential_mix: 0.16
   noise_amplitude: 0.015
   min_tendency: -0.40
   intensity_base: 0.30

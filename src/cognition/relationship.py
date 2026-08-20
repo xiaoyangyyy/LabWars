@@ -1,4 +1,4 @@
-﻿"""Signed graph diffusion for relationships 鈥?continuous message passing."""
+"""Signed graph diffusion for relationships 鈥?continuous message passing."""
 
 from __future__ import annotations
 
@@ -80,6 +80,7 @@ def update_relationships(
     deltas_resent: dict[tuple[str, str], float] = {}
     deltas_alliance: dict[tuple[str, str], float] = {}
     deltas_credit: dict[tuple[str, str], float] = {}
+    deltas_obligation: dict[tuple[str, str], float] = {}
 
     internal = set(world.world_config.get("internal_agents", []))
 
@@ -134,8 +135,11 @@ def update_relationships(
 
     if actions:
         for act in actions:
-            _apply_action_to_deltas(act, deltas_trust, deltas_resent, deltas_alliance, deltas_credit, eta)
+            _apply_action_to_deltas(
+                act, deltas_trust, deltas_resent, deltas_alliance, deltas_credit, deltas_obligation, eta
+            )
         _apply_triadic_private_influence(relationships, actions, deltas_trust, deltas_resent, deltas_credit, eta)
+        _apply_structural_balance(relationships, internal, deltas_trust, deltas_resent, deltas_alliance, eta)
 
     updated: list[RelationshipEdge] = []
     for edge in relationships:
@@ -146,7 +150,7 @@ def update_relationships(
             trust=round(clamp(edge.trust + deltas_trust.get(key, 0.0)), 4),
             resentment=round(clamp(edge.resentment + deltas_resent.get(key, 0.0)), 4),
             dependency=round(clamp(edge.dependency + deltas_trust.get(key, 0.0) * 0.05), 4),
-            obligation=edge.obligation,
+            obligation=round(clamp(edge.obligation + deltas_obligation.get(key, 0.0)), 4),
             perceived_credit_threat=round(
                 clamp(edge.perceived_credit_threat + deltas_credit.get(key, 0.0)), 4
             ),
@@ -201,12 +205,48 @@ def _apply_triadic_private_influence(
             deltas_resent[key] = deltas_resent.get(key, 0.0) + resent_pull
             deltas_credit[key] = deltas_credit.get(key, 0.0) + threat_pull
 
+
+def _apply_structural_balance(
+    relationships: list[RelationshipEdge],
+    internal: set[str],
+    deltas_trust: dict[tuple[str, str], float],
+    deltas_resent: dict[tuple[str, str], float],
+    deltas_alliance: dict[tuple[str, str], float],
+    eta: float,
+) -> None:
+    """Heider-style triad closure: ally-of-ally, enemy-of-ally."""
+    lookup = {(e.source, e.target): e for e in relationships}
+    internals = [aid for aid in internal]
+    if len(internals) > 24:
+        internals = internals[:24]
+    for a in internals:
+        for b in internals:
+            if a == b:
+                continue
+            ab = lookup.get((a, b))
+            if ab is None or ab.alliance < 0.35:
+                continue
+            for c in internals:
+                if c in {a, b}:
+                    continue
+                bc = lookup.get((b, c))
+                ac_key = (a, c)
+                if bc is None:
+                    continue
+                friend_signal = ab.alliance * bc.trust * (1.0 - bc.resentment)
+                enemy_signal = ab.alliance * bc.resentment * (1.0 - bc.trust)
+                deltas_trust[ac_key] = deltas_trust.get(ac_key, 0.0) + eta * 0.18 * (friend_signal - enemy_signal)
+                deltas_alliance[ac_key] = deltas_alliance.get(ac_key, 0.0) + eta * 0.12 * friend_signal
+                deltas_resent[ac_key] = deltas_resent.get(ac_key, 0.0) + eta * 0.16 * enemy_signal
+
+
 def _apply_action_to_deltas(
     action: dict[str, Any],
     deltas_trust: dict[tuple[str, str], float],
     deltas_resent: dict[tuple[str, str], float],
     deltas_alliance: dict[tuple[str, str], float],
     deltas_credit: dict[tuple[str, str], float],
+    deltas_obligation: dict[tuple[str, str], float],
     eta: float,
 ) -> None:
     src = action.get("agent")
@@ -216,15 +256,20 @@ def _apply_action_to_deltas(
     if not src or not tgt or src == tgt:
         return
     key = (src, tgt)
+    reverse = (tgt, src)
     if atype == "support_teammate":
         deltas_trust[key] = deltas_trust.get(key, 0.0) + eta * intensity
         deltas_alliance[key] = deltas_alliance.get(key, 0.0) + eta * 0.8 * intensity
+        deltas_obligation[reverse] = deltas_obligation.get(reverse, 0.0) + eta * 0.55 * intensity
     elif atype == "undermine_teammate":
         deltas_trust[key] = deltas_trust.get(key, 0.0) - eta * intensity
         deltas_resent[key] = deltas_resent.get(key, 0.0) + eta * intensity
+        deltas_obligation[reverse] = deltas_obligation.get(reverse, 0.0) - eta * 0.40 * intensity
     elif atype == "form_alliance":
         deltas_alliance[key] = deltas_alliance.get(key, 0.0) + eta * 1.2 * intensity
         deltas_trust[key] = deltas_trust.get(key, 0.0) + eta * 0.5 * intensity
+        deltas_obligation[key] = deltas_obligation.get(key, 0.0) + eta * 0.35 * intensity
+        deltas_obligation[reverse] = deltas_obligation.get(reverse, 0.0) + eta * 0.35 * intensity
     elif atype == "apologize":
         deltas_resent[key] = deltas_resent.get(key, 0.0) - eta * 0.7 * intensity
         deltas_trust[key] = deltas_trust.get(key, 0.0) + eta * 0.4 * intensity

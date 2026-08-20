@@ -14,10 +14,33 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LLM_CONFIG_PATH = PROJECT_ROOT / "config" / "llm.yaml"
+DEEPSEEK_CONFIG_PATH = PROJECT_ROOT / "config" / "llm.deepseek.yaml"
+
+
+def _load_dotenv() -> None:
+    path = PROJECT_ROOT / ".env"
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv()
 
 
 class LLMError(RuntimeError):
     pass
+
+
+class QuotaExhaustedError(LLMError):
+    """Provider billed out / insufficient balance. Do not retry."""
 
 
 class LLMAdapter(ABC):
@@ -95,13 +118,22 @@ def _parse_json_content(text: str) -> dict[str, Any]:
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise LLMError(f"LLM returned non-JSON: {text[:200]}") from exc
-    if not isinstance(data, dict):
-        raise LLMError("LLM JSON root must be an object")
-    return data
+    candidates = [text]
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        candidates.append(text[start : end + 1])
+    last_exc: Exception | None = None
+    for blob in candidates:
+        try:
+            data = json.loads(blob)
+        except json.JSONDecodeError as exc:
+            last_exc = exc
+            continue
+        if isinstance(data, dict):
+            return data
+        last_exc = LLMError("LLM JSON root must be an object")
+    raise LLMError(f"LLM returned non-JSON: {text[:200]}") from last_exc
 
 
 def _exception_message(exc: Exception) -> str:
@@ -115,7 +147,46 @@ def _exception_message(exc: Exception) -> str:
     return " ".join(parts)
 
 
+def _is_quota_exhausted(err: str) -> bool:
+    lowered = err.lower()
+    markers = (
+        "insufficient_quota",
+        "insufficient quota",
+        "insufficient_balance",
+        "insufficient balance",
+        "exceeded your current quota",
+        "exceeded your quota",
+        "quota exceeded",
+        "payment required",
+        "please recharge",
+        "account overdrawn",
+        "no more credits",
+        "credit is not enough",
+        "余额不足",
+        "欠费",
+        "充值",
+        " 402",
+        "402 ",
+        "status_code=402",
+        "error code: 402",
+        "error code: 401",
+        "authentication f",
+        "invalid api key",
+        "incorrect api key",
+    )
+    if any(m in lowered for m in markers):
+        return True
+    # Bare 401/402 status tokens from OpenAI client strings.
+    if "401" in lowered and ("unauthorized" in lowered or "invalid" in lowered or "api key" in lowered):
+        return True
+    if "402" in lowered:
+        return True
+    return False
+
+
 def _is_transient_api_error(err: str) -> bool:
+    if _is_quota_exhausted(err):
+        return False
     lowered = err.lower()
     markers = (
         "429", "502", "503", "504",
@@ -177,6 +248,7 @@ class OpenAIAdapter(LLMAdapter):
 
     def complete_json(self, system: str, user: str) -> dict[str, Any]:
         last_exc: Exception | None = None
+        use_json_object = True
         for attempt in range(self.max_retries):
             self._throttle()
             try:
@@ -184,22 +256,39 @@ class OpenAIAdapter(LLMAdapter):
                     "model": self.model,
                     "temperature": self.temperature,
                     "max_tokens": self.max_tokens,
-                    "response_format": {"type": "json_object"},
                     "messages": [
-                        {"role": "system", "content": system},
+                        {"role": "system", "content": system + ("" if use_json_object else "\nRespond with a JSON object only.")},
                         {"role": "user", "content": user},
                     ],
                 }
+                if use_json_object:
+                    kwargs["response_format"] = {"type": "json_object"}
                 if self.top_p is not None:
                     kwargs["top_p"] = self.top_p
                 response = self.client.chat.completions.create(**kwargs)
                 self._last_request_at = time.monotonic()
-                content = response.choices[0].message.content or "{}"
-                return _parse_json_content(content)
+                message = response.choices[0].message
+                content = message.content or ""
+                if not str(content).strip():
+                    for attr in ("reasoning_content", "refusal"):
+                        alt = getattr(message, attr, None)
+                        if alt:
+                            content = alt
+                            break
+                data = _parse_json_content(content or "{}")
+                if data:
+                    return data
+                if os.environ.get("LABWARS_FAST_JSON"):
+                    return data
+                use_json_object = False
+                last_exc = LLMError("empty JSON object from model")
+                continue
             except Exception as exc:
                 self._last_request_at = time.monotonic()
                 last_exc = exc
                 err = _exception_message(exc)
+                if _is_quota_exhausted(err):
+                    raise QuotaExhaustedError(f"DeepSeek/OpenAI quota exhausted: {exc}") from exc
                 if _is_transient_api_error(err) and attempt + 1 < self.max_retries:
                     time.sleep(_retry_backoff_sec(attempt, err))
                     continue
@@ -301,7 +390,19 @@ def get_adapter(
 ) -> LLMAdapter:
     cfg = {**load_llm_config(), **(config or {})}
     prov = (provider or cfg.get("provider", "openai")).lower()
-    mdl = model or cfg.get("model", "gpt-4o-mini")
+    if prov == "deepseek":
+        ds = load_llm_config(DEEPSEEK_CONFIG_PATH)
+        return get_adapter(
+            provider="openai",
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_key=api_key,
+            base_url=base_url,
+            top_p=top_p,
+            config={**ds, **(config or {})},
+        )
+    mdl = model or os.environ.get("LABWARS_LLM_MODEL") or cfg.get("model", "gpt-4o-mini")
     temp = temperature if temperature is not None else float(cfg.get("temperature", 0.7))
     tokens = max_tokens or int(cfg.get("max_tokens", 1024))
     tp = top_p if top_p is not None else cfg.get("top_p")
@@ -309,8 +410,8 @@ def get_adapter(
     if prov == "openai":
         env_key = cfg.get("api_key_env", "OPENAI_API_KEY")
         url = base_url or cfg.get("base_url")
-        delay = float(cfg.get("request_delay_sec", 0))
-        retries = int(cfg.get("max_retries", 8))
+        delay = float(os.environ.get("LABWARS_REQUEST_DELAY_SEC", cfg.get("request_delay_sec", 0)))
+        retries = int(os.environ.get("LABWARS_LLM_MAX_RETRIES", cfg.get("max_retries", 8)))
         return OpenAIAdapter(
             model=mdl,
             temperature=temp,

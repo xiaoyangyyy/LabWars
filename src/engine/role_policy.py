@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-import hashlib
 import math
-import random
+import os
 from typing import Any
 
 from src.cognition.memory import RecallResult
+from src.cognition.pressure_fields import compute_pressure_fields
 from src.cognition.social_potential import SOCIAL_POTENTIAL_DIMENSIONS, compute_social_potential
 from src.engine.action_selection import generate_action_candidates
+from src.engine.causal.noise import STREAM_ACTION_SAMPLE, keyed_uniform
 from src.engine.diversity import (
     avoid_actions,
     filter_allowed_actions,
 )
-from src.engine.llm_adapter import LLMAdapter, LLMError
+from src.engine.llm_adapter import LLMAdapter, LLMError, QuotaExhaustedError
 from src.engine.prompts import (
     ACTION_SCORING_SYSTEM,
     LLM_NATIVE_POLICY_SYSTEM,
@@ -25,6 +26,7 @@ from src.engine.prompts import (
 )
 from src.world.actions import ActionType, get_allowed_actions
 from src.world.models import Agent, EventAtom, WorldState
+from src.world.organization import default_private_intent, observation_gain, primary_authority
 
 from .event_agent import is_agent_active
 
@@ -35,8 +37,9 @@ def _pick_target(agent: Agent, world: WorldState, event: EventAtom, suggested: s
     if event.source != agent.id and event.source in world.agents:
         return event.source
     internal = world.world_config.get("internal_agents", [])
-    if "pi" in internal and agent.id != "pi":
-        return "pi"
+    authority = primary_authority(world, agent)
+    if authority and authority in internal and agent.id != authority:
+        return authority
     for t in event.targets:
         if t in world.agents and t != agent.id:
             return t
@@ -65,11 +68,7 @@ def _normalize_action_response(
     comm_target = _pick_target(agent, world, event, comm.get("target"))
 
     public = raw.get("public_position") or {"statement_type": "neutral", "authorship_claim": "any_authorship"}
-    private = raw.get("private_intent") or {
-        "goal": "secure_first_author",
-        "strategy": atype,
-        "trust_pi": agent.beliefs.pi_fairness,
-    }
+    private = raw.get("private_intent") or default_private_intent(agent, atype)
 
     return {
         "agent": agent.id,
@@ -97,16 +96,10 @@ def _softmax(values: list[float], temperature: float = 0.22) -> list[float]:
     return [e / total for e in exps]
 
 
-def _stable_rng(seed: int, round_num: int, agent_id: str, suffix: str) -> random.Random:
-    h = hashlib.sha256(f"{seed}:{round_num}:{agent_id}:{suffix}".encode("utf-8")).hexdigest()
-    return random.Random(int(h[:16], 16))
-
-
 def _sample_payload(payloads: list[dict[str, Any]], *, seed: int, round_num: int, agent_id: str) -> dict[str, Any]:
     if not payloads:
         raise ValueError("No action payloads to sample")
-    rng = _stable_rng(seed, round_num, agent_id, "llm_fused")
-    needle = rng.random()
+    needle = keyed_uniform(seed, round_num, STREAM_ACTION_SAMPLE, agent_id=agent_id, name="llm_fused")
     total = 0.0
     for payload in payloads:
         total += float(payload.get("probability", 0.0))
@@ -141,7 +134,7 @@ def _scripted_render_action(agent: Agent, event: EventAtom, selected_payload: di
         },
         "public_position": {"statement_type": "neutral", "authorship_claim": "any_authorship"},
         "private_intent": {
-            "goal": "follow_social_field",
+            "goal": default_private_intent(agent, action_type)["goal"],
             "strategy": action_type,
             "trust_pi": agent.beliefs.pi_fairness,
         },
@@ -198,8 +191,10 @@ def _cognitive_sampling_scores(
         for idx, item in enumerate(rows)
     }
 class RolePolicyAgent:
-    def __init__(self, llm: LLMAdapter, max_retries: int = 3) -> None:
+    def __init__(self, llm: LLMAdapter, max_retries: int | None = None) -> None:
         self.llm = llm
+        if max_retries is None:
+            max_retries = int(os.environ.get("LABWARS_POLICY_RETRIES", "3"))
         self.max_retries = max_retries
 
 
@@ -312,6 +307,8 @@ class RolePolicyAgent:
         try:
             prompt = build_action_scoring_prompt(agent, event, world, recall, candidate_payload)
             raw = self.llm.complete_json(ACTION_SCORING_SYSTEM, prompt)
+        except QuotaExhaustedError:
+            raise
         except (LLMError, KeyError, TypeError, ValueError) as exc:
             return candidate_payload, {"enabled": True, "source": "field_only_fallback", "error": str(exc)}
 
@@ -384,6 +381,11 @@ class RolePolicyAgent:
         local_config = dict(config)
         if not llm_sampled:
             local_config["enable_llm_action_scoring"] = False
+        if config.get("observation_lesion"):
+            obs_gain = 1.0
+        else:
+            channel = (recall.audit or {}).get("observation_channel") if recall else None
+            obs_gain = observation_gain(str(channel or "direct"))
         candidates = generate_action_candidates(
             agent,
             event,
@@ -392,6 +394,7 @@ class RolePolicyAgent:
             allowed_str,
             avoid_actions=dynamic_avoid,
             seed=seed,
+            observation_gain_value=obs_gain,
         )
         base_payload = [c.to_dict() for c in candidates]
         if policy_mode == "llm_native" and llm_sampled:
@@ -404,6 +407,8 @@ class RolePolicyAgent:
                     allowed_str,
                     dynamic_avoid,
                 )
+            except QuotaExhaustedError:
+                raise
             except (LLMError, KeyError, TypeError, ValueError) as exc:
                 candidate_payload = base_payload
                 scoring_audit = {"enabled": True, "source": "llm_native_fallback_to_field", "policy_mode": policy_mode, "error": str(exc)}
@@ -437,6 +442,9 @@ class RolePolicyAgent:
             )
             for dim in SOCIAL_POTENTIAL_DIMENSIONS
         }
+        pressure_fields = compute_pressure_fields(
+            world, agent, event, recall, potential=social_potential
+        )
 
         if not llm_sampled:
             act = _scripted_render_action(agent, event, selected_payload)
@@ -449,6 +457,7 @@ class RolePolicyAgent:
             act["selected_social_pressure"] = round(selected_social_pressure, 4)
             act["selected_social_pressure_decomposition"] = social_potential.action_decomposition(str(selected_payload.get("type", "")))
             act["social_potential_ablation"] = social_potential_ablation
+            act["pressure_fields"] = pressure_fields
             act["llm_action_scoring"] = {**scoring_audit, "cognitive_sampling": sampling_audit, "source": scoring_audit.get("source", "field_only_unsampled")}
             act["cognitive_sampling"] = sampling_audit
             return act
@@ -488,14 +497,37 @@ class RolePolicyAgent:
                     str(selected_payload.get("type", ""))
                 )
                 act["social_potential_ablation"] = social_potential_ablation
+                act["pressure_fields"] = pressure_fields
                 act["llm_action_scoring"] = {**scoring_audit, "cognitive_sampling": sampling_audit}
                 act["cognitive_sampling"] = sampling_audit
                 return act
+            except QuotaExhaustedError:
+                raise
             except (LLMError, KeyError, TypeError, ValueError) as exc:
                 last_error = str(exc)
                 retry_note = "Keep the sampled action fixed and repair only JSON/public/private fields."
 
-        raise LLMError(f"RolePolicyAgent failed for {agent.id} after retries: {last_error}")
+        act = _scripted_render_action(agent, event, selected_payload)
+        private = act.setdefault("private_intent", {})
+        private.setdefault("private_motives", selected_payload.get("motives", {}))
+        act["action_candidates"] = candidate_payload
+        act["selected_action"] = selected_payload
+        act["private_motives"] = selected_payload.get("motives", {})
+        act["social_potential"] = social_potential.to_dict()
+        act["selected_social_pressure"] = round(selected_social_pressure, 4)
+        act["selected_social_pressure_decomposition"] = social_potential.action_decomposition(
+            str(selected_payload.get("type", ""))
+        )
+        act["social_potential_ablation"] = social_potential_ablation
+        act["pressure_fields"] = pressure_fields
+        act["llm_action_scoring"] = {
+            **scoring_audit,
+            "cognitive_sampling": sampling_audit,
+            "source": "scripted_render_fallback",
+            "error": last_error[:240],
+        }
+        act["cognitive_sampling"] = sampling_audit
+        return act
 
     def decide_all(
         self,

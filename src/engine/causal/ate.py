@@ -1,4 +1,8 @@
-"""Causal experiment runner — ATE and outcome extraction."""
+"""Paired total-effect runner — the Rung-3 ATE backend.
+
+Kept as a thin CRN-paired loop. Mediation fractions and observational
+identification live elsewhere; this module only compares Y(do(op)) vs Y.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,7 @@ from typing import Any
 from src.engine.intervention import Intervention
 from src.engine.run_log import RunLog, _memory_cluster_strength, extract_outcome
 from src.engine.simulation import SimConfig, run_simulation
+from src.engine.story_cast import story_cast_from_log
 
 
 @dataclass
@@ -44,14 +49,29 @@ def run_causal_experiment(
         treat_cfg = SimConfig(**{**base_config.__dict__, "seed": seed, "interventions": [intervention]})
 
         ctrl_log = run_simulation(ctrl_cfg)
-        treat_log = run_simulation(treat_cfg)
+        treat_token = None
+        if ctrl_log.llm_cache is not None:
+            from src.engine.causal.llm_trace import bind_llm_trace, reset_llm_trace
+
+            treat_token = bind_llm_trace(ctrl_log.llm_cache)
+        try:
+            treat_log = run_simulation(treat_cfg)
+        finally:
+            if treat_token is not None:
+                reset_llm_trace(treat_token)
 
         per_seed.append({
             "seed": seed,
             "Y_control": extract_outcome(ctrl_log, outcome),
             "Y_treatment": extract_outcome(treat_log, outcome),
-            "M_control": ctrl_log.outcomes.get("memory_authorship_cluster_strength", _memory_cluster_strength(ctrl_log)),
-            "M_treatment": treat_log.outcomes.get("memory_authorship_cluster_strength", _memory_cluster_strength(treat_log)),
+            "M_control": ctrl_log.outcomes.get(
+                "memory_authorship_cluster_strength",
+                _memory_cluster_strength(ctrl_log, story_cast_from_log(ctrl_log).idea),
+            ),
+            "M_treatment": treat_log.outcomes.get(
+                "memory_authorship_cluster_strength",
+                _memory_cluster_strength(treat_log, story_cast_from_log(treat_log).idea),
+            ),
         })
 
     ate, c_mean, t_mean = compute_ate(per_seed)

@@ -15,6 +15,7 @@ ORGANIZATION_ABLATION_CONDITIONS = [
     "hierarchy_lesion",
     "status_lesion",
     "trust_lesion",
+    "observation_lesion",
     "social_physics_only",
     "llm_native",
     "llm_scoring_off",
@@ -63,6 +64,7 @@ def _clone_config(base: SimConfig, *, seed: int, condition: str) -> SimConfig:
         "hierarchy_lesion": False,
         "status_lesion": False,
         "trust_lesion": False,
+        "observation_lesion": False,
         "policy_mode": "dual_engine",
         "enable_llm_action_scoring": True,
         "cognitive_policy_lambda": 0.35,
@@ -76,6 +78,8 @@ def _clone_config(base: SimConfig, *, seed: int, condition: str) -> SimConfig:
         data["status_lesion"] = True
     elif condition == "trust_lesion":
         data["trust_lesion"] = True
+    elif condition == "observation_lesion":
+        data["observation_lesion"] = True
     elif condition == "social_physics_only":
         data["policy_mode"] = "social_physics"
         data["enable_llm_action_scoring"] = False
@@ -137,6 +141,7 @@ def run_organization_ablation(
     - hierarchy_lesion: flatten PI-centered dependency and authority pressure
     - status_lesion: remove status, authorship entitlement, and credit-threat incentives
     - trust_lesion: remove trust/alliance as a dynamic state channel
+    - observation_lesion: remove information asymmetry (omniscient affect/belief/recall cueing)
     - social_physics_only: field-only policy mode
     - llm_native: LLM proposes candidates directly
     - llm_scoring_off: candidates come from the field, no LLM candidate scoring
@@ -161,6 +166,7 @@ def run_organization_ablation(
                 "hierarchy_lesion": bool(log.config.get("hierarchy_lesion")),
                 "status_lesion": bool(log.config.get("status_lesion")),
                 "trust_lesion": bool(log.config.get("trust_lesion")),
+                "observation_lesion": bool(log.config.get("observation_lesion")),
                 **{name: round(_measure(log, name, metrics), 6) for name in outcome_names},
             })
 

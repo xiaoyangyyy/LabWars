@@ -1,11 +1,9 @@
-﻿"""Continuous action field for probabilistic behavior generation."""
+"""Continuous action field for probabilistic behavior generation."""
 
 from __future__ import annotations
 
 import copy
-import hashlib
 import math
-import random
 from functools import lru_cache
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -14,9 +12,12 @@ from typing import Any
 import yaml
 
 from src.cognition.memory import RecallResult
+from src.cognition.social_potential import compute_social_potential
+from src.engine.causal.noise import STREAM_ACTION_JITTER, STREAM_ACTION_SAMPLE, keyed_uniform, keyed_uniform_centered
 from src.engine.diversity import action_usage_counts
 from src.world.actions import ACTION_CATEGORIES, ActionType
 from src.world.models import Agent, EventAtom, RelationshipEdge, WorldState
+from src.world.organization import can_directly_observe, observation_gain, primary_authority
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ACTION_FIELD_CONFIG = PROJECT_ROOT / "config" / "action_field.yaml"
@@ -65,11 +66,6 @@ def _softmax(values: list[float], temperature: float) -> list[float]:
     return [e / total for e in exps]
 
 
-def _stable_rng(seed: int, round_num: int, agent_id: str) -> random.Random:
-    h = hashlib.sha256(f"{seed}:{round_num}:{agent_id}".encode("utf-8")).hexdigest()
-    return random.Random(int(h[:16], 16))
-
-
 def _edge(world: WorldState, source: str, target: str) -> RelationshipEdge | None:
     for edge in world.relationships:
         if edge.source == source and edge.target == target:
@@ -84,14 +80,14 @@ def _strongest_social_target(agent: Agent, world: WorldState, event: EventAtom) 
     if candidates:
         candidates.sort(key=lambda e: e.resentment + e.perceived_credit_threat + (1.0 - e.trust), reverse=True)
         return candidates[0].target
-    return "pi" if agent.id != "pi" and "pi" in world.agents else "project"
+    return primary_authority(world, agent) or "project"
 
 
 def _target_for_action(action: str, agent: Agent, world: WorldState, event: EventAtom) -> str:
     if action in {"run_experiment", "improve_baseline", "write_section", "debug_code", "analyze_failure", "prepare_rebuttal", "share_result", "document_contribution", "submit_workshop_version", "check_rival_arxiv"}:
         return "project"
     if action in {"ask_for_authorship", "privately_lobby_pi", "request_mediation", "comply", "rebel"}:
-        return "pi" if agent.id != "pi" and "pi" in world.agents else _strongest_social_target(agent, world, event)
+        return primary_authority(world, agent) or _strongest_social_target(agent, world, event)
     if action in {"support_teammate", "undermine_teammate", "challenge_claim", "confront", "blame", "apologize", "form_alliance"}:
         return _strongest_social_target(agent, world, event)
     if action == "talk_to_alumni" and "lab_alumni" in world.agents:
@@ -117,7 +113,7 @@ def _memory_features(recall: RecallResult | None) -> dict[str, float]:
 
 def _relationship_features(agent: Agent, world: WorldState, target: str) -> dict[str, float]:
     edge = _edge(world, agent.id, target)
-    pi_edge = _edge(world, agent.id, "pi")
+    pi_edge = _edge(world, agent.id, primary_authority(world, agent) or "pi")
     return {
         "trust": edge.trust if edge else agent.beliefs.team_trust,
         "resentment_toward_target": edge.resentment if edge else agent.emotion.resentment,
@@ -264,6 +260,7 @@ DEFAULT_ACTION_FIELD_PARAMS = {
     "avoided_action_penalty": 0.08,
     "emotional_action_bonus": 0.05,
     "talk_to_alumni_time_penalty": 0.08,
+    "social_potential_mix": 0.16,
     "noise_amplitude": 0.015,
     "min_tendency": -0.40,
     "intensity_base": 0.30,
@@ -357,6 +354,7 @@ def generate_action_candidates(
     avoid_actions: list[str] | None = None,
     seed: int = 0,
     top_n: int = 8,
+    observation_gain_value: float | None = None,
 ) -> list[ActionCandidate]:
     cfg = get_action_field_config()
     params = cfg["action_field"]
@@ -365,8 +363,15 @@ def generate_action_candidates(
     source = cfg["source"]
     avoid = set(avoid_actions or [])
     candidates: list[ActionCandidate] = []
-    rng = _stable_rng(seed, event.round, agent.id)
     recent_counts = action_usage_counts(agent, window=8)
+    gain = (
+        float(observation_gain_value)
+        if observation_gain_value is not None
+        else observation_gain("direct" if can_directly_observe(agent, event) else "none")
+    )
+    observed = gain > 0.0
+    social_field = compute_social_potential(world, agent, event, recall)
+    social_mix = float(params.get("social_potential_mix", 0.0))
     for action in allowed_actions:
         target = _target_for_action(action, agent, world, event)
         motives = _base_motives(agent, world, event, target, recall)
@@ -376,7 +381,8 @@ def generate_action_candidates(
             name: motives.get(name, 0.0) * weight
             for name, weight in weights.items()
         }
-        event_bonus = float(event_affinity.get(event.type, {}).get(action, 0.0))
+        event_bonus = float(event_affinity.get(event.type, {}).get(action, 0.0)) * gain
+        social_prior = social_mix * (social_field.pressure_for_action(action) - 0.5)
         repetition_penalty = -float(params["repetition_penalty"]) * recent_counts.get(action, 0)
         avoided_penalty = -float(params["avoided_action_penalty"]) if action in avoid else 0.0
         timing_adjustment = 0.0
@@ -387,11 +393,14 @@ def generate_action_candidates(
         if ACTION_CATEGORIES.get(ActionType(action)) == "emotional":
             emotional_bonus = float(params["emotional_action_bonus"]) * motives["resentment_drive"]
         noise = float(params["noise_amplitude"])
-        noise_contrib = rng.uniform(-noise, noise)
+        noise_contrib = keyed_uniform_centered(
+            seed, event.round, STREAM_ACTION_JITTER, agent_id=agent.id, name=action, amplitude=noise,
+        )
         raw_tendency = (
             baseline
             + sum(motive_contribs.values())
             + event_bonus
+            + social_prior
             + repetition_penalty
             + avoided_penalty
             + timing_adjustment
@@ -409,6 +418,9 @@ def generate_action_candidates(
             "baseline": round(baseline, 4),
             "motive_contributions": _round_contribs(motive_contribs),
             "event_affinity": round(event_bonus, 4),
+            "observed_event": observed,
+            "observation_gain": round(gain, 4),
+            "social_potential_prior": round(social_prior, 4),
             "repetition_penalty": round(repetition_penalty, 4),
             "avoidance_penalty": round(avoided_penalty, 4),
             "timing_adjustment": round(timing_adjustment, 4),
@@ -447,8 +459,7 @@ def sample_action_candidate_legacy(candidates: list[ActionCandidate], *, seed: i
     """
     if not candidates:
         raise ValueError("No action candidates to sample")
-    rng = _stable_rng(seed + 7919, round_num, agent_id)
-    needle = rng.random()
+    needle = keyed_uniform(seed, round_num, STREAM_ACTION_SAMPLE, agent_id=agent_id, name="legacy_needle")
     total = 0.0
     for candidate in candidates:
         total += candidate.probability

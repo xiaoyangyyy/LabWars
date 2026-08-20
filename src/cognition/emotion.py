@@ -63,7 +63,9 @@ EVENT_EMOTION_SIGNATURES: dict[str, EmotionImpulse] = {
 }
 
 
-def _event_impulse(agent: Agent, event: EventAtom) -> EmotionImpulse:
+def _event_impulse(agent: Agent, event: EventAtom, *, gain: float = 1.0) -> EmotionImpulse:
+    if gain <= 0.0:
+        return EmotionImpulse()
     base = EVENT_EMOTION_SIGNATURES.get(event.type, EmotionImpulse())
     impulse = EmotionImpulse(**base.as_dict())
     salience = event.memory_salience
@@ -80,10 +82,10 @@ def _event_impulse(agent: Agent, event: EventAtom) -> EmotionImpulse:
                 scale=salience,
             )
 
-    if agent.id in event.targets or event.source == agent.id:
-        scaled = EmotionImpulse(**{k: v * salience * sensitivity for k, v in impulse.as_dict().items()})
-        return scaled
-    return EmotionImpulse()
+    involved = agent.id in event.targets or event.source == agent.id
+    witness = 1.0 if involved else 0.55
+    scale = salience * sensitivity * gain * witness
+    return EmotionImpulse(**{k: v * scale for k, v in impulse.as_dict().items()})
 
 
 def _memory_field_impulse(recall: RecallResult | None, agent: Agent | None = None) -> EmotionImpulse:
@@ -170,12 +172,17 @@ def update_emotion(
     event: EventAtom,
     project: ProjectMetrics,
     recall: RecallResult | None = None,
+    *,
+    channel: str = "direct",
 ) -> dict[str, float]:
+    from src.world.organization import observation_gain
+
     e = agent.emotion.model_dump()
     total = EmotionImpulse()
+    gain = observation_gain(channel)
 
-    total.add(_event_impulse(agent, event))
-    total.add(_memory_field_impulse(recall, agent))
+    total.add(_event_impulse(agent, event, gain=gain))
+    total.add(_memory_field_impulse(recall, agent), scale=gain if channel != "none" else 0.35)
     total.add(_project_pressure_impulse(project), scale=0.85)
 
     for k in EMOTION_KEYS:

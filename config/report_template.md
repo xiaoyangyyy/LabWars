@@ -1,4 +1,4 @@
-﻿# LabWars Run Report 鈥?{{run_id}}
+# LabWars Run Report 鈥?{{run_id}}
 
 > Experiment {{experiment_id}} / Condition {{condition_id}} / Seed {{seed}}
 
@@ -53,3 +53,7 @@
 ## 13. LLM Influence Footprint
 
 {{llm_footprint_section}}
+
+## 14. Causal Decompiler MRI
+
+{{causal_mri_section}}

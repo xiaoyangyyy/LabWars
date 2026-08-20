@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from src.engine.run_log import RunLog, extract_outcome, finalize_outcomes
+from src.engine.story_cast import remap_agent_id, story_cast_from_log
 from src.world.models import Agent, AgentRole, Beliefs, Emotion, Personality, RelationshipEdge, Resources
+from src.world.organization import EventCast
 
 
 def _minimal_agent(**belief_kw) -> Agent:
@@ -76,3 +78,103 @@ class TestOutcomeFixes:
         }}}]
         protest = extract_outcome(log, "protest_authorship")
         assert 0.0 < protest < 1.0
+
+
+class TestStoryCastExtraction:
+    def test_canonical_log_without_event_cast_keeps_phd_a(self):
+        log = _log()
+        log.actions = [{"agent": "phd_a", "round": 52, "type": "confront", "intensity": 0.4}]
+        log.round_records = [{"round": 52, "event_id": "E052", "agent_deltas": {"phd_a": {
+            "beliefs": {"pi_fairness": 0.15},
+            "emotion": {"resentment": 0.7, "anger": 0.6},
+        }}}]
+        cast = story_cast_from_log(log)
+        assert cast.idea == "phd_a"
+        assert cast.canonical is True
+        assert cast.draft_round == 52
+        assert extract_outcome(log, "protest_authorship") > 0.0
+
+    def test_scaled_event_cast_extracts_idea_agent(self):
+        idea = "phd_idea_001_lab_1"
+        rival = "phd_exp_001_lab_1"
+        log = RunLog(run_id="t", config={
+            "max_rounds": 60,
+            "event_cast": {"pi": "pi_lab_1", "idea": idea, "experimenter": rival},
+        })
+        log.actions = [{"agent": idea, "round": 52, "type": "confront", "intensity": 0.4}]
+        log.round_records = [
+            {"round": 25, "metrics": {f"trust_{idea}_{rival}": 0.8}},
+            {"round": 52, "agent_deltas": {idea: {
+                "beliefs": {"pi_fairness": 0.15},
+                "emotion": {"resentment": 0.7, "anger": 0.6},
+            }}},
+        ]
+        assert story_cast_from_log(log).idea == idea
+        assert extract_outcome(log, "trust_phd_b_r25") == 0.8
+        assert extract_outcome(log, "protest_authorship") > 0.0
+
+    def test_ambiguity_event_id_follows_event_type(self):
+        idea = "phd_idea_001_lab_1"
+        log = RunLog(run_id="t", config={
+            "max_rounds": 60,
+            "event_cast": {"pi": "pi_lab_1", "idea": idea, "experimenter": "phd_exp_001_lab_1"},
+        })
+        log.events = [{"event_id": "S018", "round": 18, "type": "authorship_ambiguity", "source": "pi_lab_1"}]
+        log.round_records = [{"round": 18, "event_id": "S018", "agent_deltas": {idea: {
+            "memory_written": {"valence": -0.42, "content_type": "authorship_signal", "strength": 0.7},
+        }}}]
+        assert story_cast_from_log(log).ambiguity_event_id == "S018"
+        assert extract_outcome(log, "interpretation_of_E030") == -0.42
+
+    def test_finalize_trust_pi_uses_cast_ids(self):
+        idea = "phd_idea_001_lab_1"
+        pi = "pi_lab_1"
+        agent = _minimal_agent(pi_fairness=0.2, team_trust=0.3)
+        agent.id = idea
+        log = RunLog(run_id="t", config={
+            "event_cast": {"pi": pi, "idea": idea, "experimenter": "phd_exp_001_lab_1"},
+        })
+        rel = [RelationshipEdge(
+            source=idea, target=pi, trust=0.81, resentment=0.1, dependency=0.6,
+            obligation=0.1, perceived_credit_threat=0.2, communication_frequency=0.5,
+            alliance=0.0, information_access=0.4, last_interaction_valence=0.0,
+        )]
+        finalize_outcomes(log, {idea: agent}, rel)
+        assert log.outcomes["trust_pi_final"] == 0.81
+        assert log.config["event_cast"]["idea"] == idea
+
+    def test_remap_canonical_ids_onto_event_cast(self):
+        cast = EventCast(pi="pi_lab_1", idea="phd_idea_001_lab_1", experimenter="phd_exp_001_lab_1")
+        assert remap_agent_id("phd_a", cast) == "phd_idea_001_lab_1"
+        assert remap_agent_id("phd_b", cast) == "phd_exp_001_lab_1"
+        assert remap_agent_id("pi", cast) == "pi_lab_1"
+        assert remap_agent_id("master_c", cast) == "master_c"
+
+
+class TestLoggedTrustAndSplitY:
+    def test_trust_pi_final_from_round_metrics_without_world(self):
+        log = _log()
+        log.round_records = [
+            {"round": 1, "metrics": {"trust_phd_a_pi": 0.61, "public_private_divergence": 0.4}},
+            {"round": 60, "metrics": {"trust_phd_a_pi": 0.44, "public_private_divergence": 0.7}},
+        ]
+        finalize_outcomes(log)
+        assert log.outcomes["trust_pi_logged"] == 0.44
+        assert log.outcomes["trust_pi_final"] == 0.44
+        assert log.outcomes["public_private_divergence_last"] == 0.7
+        assert log.outcomes["split_y"]["trust_pi_logged"] == 0.44
+
+    def test_rehydrate_backfills_zero_trust_from_metrics(self):
+        from src.engine.run_log import rehydrate_outcomes
+
+        log = _log()
+        log.outcomes["trust_pi_final"] = 0.0
+        log.round_records = [
+            {"round": 1, "metrics": {"trust_phd_a_pi": 0.60}},
+            {"round": 60, "metrics": {"trust_phd_a_pi": 0.55}},
+        ]
+        rehydrate_outcomes(log)
+        assert log.outcomes["trust_pi_final"] == 0.55
+        assert "interpretation_of_E030" in log.outcomes
+        assert "help_rebuttal" in log.outcomes
+

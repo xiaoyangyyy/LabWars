@@ -19,3 +19,8 @@ def test_population_size_is_recorded_and_runs():
     assert log.config["population_size"] == 30
     assert len(log.actions) >= 30
     assert "organization_fragility_index" in log.outcomes
+    cast = log.config["event_cast"]
+    actor_ids = {a["agent"] for a in log.actions}
+    assert cast["idea"] in actor_ids
+    assert cast["pi"]
+    assert "story_beats" in log.config

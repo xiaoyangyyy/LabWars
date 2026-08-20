@@ -40,5 +40,11 @@ def shuffle_vs_full_test(seeds: list[int], outcome: str = "protest_authorship") 
     }
 
 
+def run_paper(seed: int = 0, *, max_rounds: int = 60, **kwargs: Any) -> dict[str, Any]:
+    from src.experiments.paper_contrasts import run_experiment_contrasts
+
+    return run_experiment_contrasts("V", seeds=[seed], max_rounds=max_rounds, **kwargs)
+
+
 def condition_table() -> list[dict[str, str]]:
     return [{"id": cid, "label": c.label} for cid, c in EXPERIMENT_VALIDITY.items()]

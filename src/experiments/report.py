@@ -1,4 +1,4 @@
-﻿"""Agent MRI decompilation report generator."""
+"""Agent MRI decompilation report generator."""
 
 from __future__ import annotations
 
@@ -153,16 +153,80 @@ def _format_llm_footprint(footprint: dict[str, Any]) -> str:
         lines.append(f"  llm top3: {_format_rank_items(item.get('llm_top3', []))}")
     return "\n".join(lines)
 
+def _format_causal_mri(report: dict[str, Any] | None) -> str:
+    if not report:
+        return "_Causal decompiler not attached. Run `python -m src.experiments decompile`._"
+    lines = [
+        f"- Identity twin: {'ok' if report.get('identity_twin_ok') else 'FAILED'}",
+        f"- Outcome {report.get('outcome')}: factual Y={float(report.get('factual_y', 0)):.4f}",
+    ]
+    split = report.get("split_y") or {}
+    if split:
+        lines.append("- Split Y: " + ", ".join(f"{k}={float(v):.3f}" for k, v in split.items()))
+    for finding in (report.get("findings") or [])[:6]:
+        lines.append(f"- Finding: {finding}")
+    replay = report.get("llm_replay") or {}
+    lines.append(
+        f"- LLM replay: identity hits={replay.get('identity_run_hits', 0)} "
+        f"misses={replay.get('identity_run_misses', 0)}"
+    )
+    for item in (report.get("memory_irf") or [])[:6]:
+        lines.append(
+            f"- IRF {item.get('factor_id')}: ATE={float(item.get('ate', 0)):+.4f} "
+            f"(twin Y={float(item.get('twin_y', 0)):.4f})"
+        )
+    for item in (report.get("contrastive") or [])[:6]:
+        lines.append(
+            f"- Skip {item.get('factor_id')}: ATE={float(item.get('ate', 0)):+.4f}"
+        )
+    locus = report.get("point_of_commitment")
+    if locus:
+        lines.append(f"- Point of commitment: {locus.get('factor_id')} ATE={float(locus.get('ate', 0)):+.4f}")
+    story = report.get("story_shapley") or {}
+    if story.get("shapley"):
+        lines.append(
+            "- Story Shapley: "
+            + ", ".join(f"{k}={float(v):.3f}" for k, v in story["shapley"].items())
+            + f" (AND-lie={story.get('and_lie')})"
+        )
+    worlds = report.get("three_worlds") or {}
+    if worlds:
+        lines.append(
+            f"- Three-worlds: total={float(worlds.get('ate_total', 0)):+.4f} "
+            f"gated={float(worlds.get('gated_channel', 0)):+.4f} "
+            f"hypocrisy={float(worlds.get('hypocrisy_index', 0)):+.4f}"
+        )
+    shapley = report.get("shapley_toy") or {}
+    if shapley:
+        lines.append("- Planted Shapley: " + ", ".join(f"{k}={v:.2f}" for k, v in shapley.items()))
+    for note in (report.get("notes") or [])[:4]:
+        lines.append(f"- {note}")
+    return "\n".join(lines)
+
+
 def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None) -> str:
     metrics = metrics or compute_run_metrics(log)
     outcomes = metrics["outcomes"]
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
 
+    split = outcomes.get("split_y") if isinstance(outcomes.get("split_y"), dict) else {}
+    if not split:
+        split = {k: outcomes.get(k, 0) for k in (
+            "protest_authorship", "public_private_divergence_mean", "post_r52_compliance",
+            "trust_pi_final", "trust_pi_logged", "pi_fairness_r52",
+            "promise_broken_strength_r52", "promise_honored_strength_r52",
+            "memory_authorship_cluster_strength", "authorship_dispute_index",
+        )}
     latent = (
-        f"- Primary outcomes: protest={outcomes.get('protest_authorship', 0):.0f}, "
-        f"trust_pi_final={outcomes.get('trust_pi_final', 0):.3f}\n"
-        f"- Memory cluster strength: {outcomes.get('memory_authorship_cluster_strength', 0):.3f}\n"
-        f"- Authority compliance: {outcomes.get('authority_compliance', 0):.3f}"
+        f"- Split Y: protest={float(split.get('protest_authorship', 0)):.3f}, "
+        f"PPD(mean)={float(split.get('public_private_divergence_mean', 0)):.3f}, "
+        f"PPD(last)={float(split.get('public_private_divergence_last', outcomes.get('public_private_divergence_last', 0))):.3f}, "
+        f"R52 comply={float(split.get('post_r52_compliance', 0)):.3f}\n"
+        f"- Trust: relationship={float(split.get('trust_pi_final', outcomes.get('trust_pi_final', 0))):.3f}, "
+        f"logged={float(split.get('trust_pi_logged', outcomes.get('trust_pi_logged', 0))):.3f}, "
+        f"pi_fairness_r52={float(split.get('pi_fairness_r52', outcomes.get('pi_fairness_r52', 0))):.3f}\n"
+        f"- Memory cluster strength: {float(outcomes.get('memory_authorship_cluster_strength', 0)):.3f}\n"
+        f"- Authority compliance: {float(outcomes.get('authority_compliance', 0)):.3f}"
     )
 
     memory_causal = (
@@ -212,6 +276,7 @@ def generate_report_from_log(log: RunLog, metrics: dict[str, Any] | None = None)
         "{{llm_scoring_section}}": _format_llm_scoring_influence(metrics.get("llm_scoring_influence", {})),
         "{{action_field_explanation_section}}": _format_action_field_explanations(metrics.get("action_field_explanations", [])),
         "{{llm_footprint_section}}": _format_llm_footprint(metrics.get("llm_influence_footprint", {})),
+        "{{causal_mri_section}}": _format_causal_mri(log.outcomes.get("causal_mri")),
     }
     text = template
     for k, v in replacements.items():
@@ -257,7 +322,10 @@ def generate_finding_summary(
     y_c = sum(l.outcomes.get("protest_authorship", 0) for l in control_logs) / max(len(control_logs), 1)
     y_t = sum(l.outcomes.get("protest_authorship", 0) for l in treatment_logs) / max(len(treatment_logs), 1)
     delta_pct = (y_c - y_t) * 100
+    note = med.get("note") or ""
+    extra = f" {note}." if note else ""
     return (
         f"`do({intervention_label})` shifted protest probability by {delta_pct:+.0f}pp. "
         f"Mediation fraction via authorship memory cluster: {med['mediation_fraction']:.0%}."
+        f"{extra}"
     )

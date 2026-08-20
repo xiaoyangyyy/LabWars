@@ -51,3 +51,59 @@ class ProbeAgent:
         ]
         suggestions.sort(key=lambda p: p["activation"], reverse=True)
         return suggestions
+
+    def suggest_from_mri(self, report: Any) -> list[dict[str, Any]]:
+        """Turn a CausalMRIReport into the next interventions worth running."""
+        suggestions: list[dict[str, Any]] = []
+        irf = list(getattr(report, "memory_irf", None) or [])
+        if irf:
+            best = max(irf, key=lambda item: abs(float(item.get("ate", 0.0))))
+            suggestions.append({
+                "round": _round_from_factor(str(best.get("factor_id", ""))),
+                "intervention_type": "memory_intervention",
+                "variant": "memory_delete_pi_promise",
+                "activation": round(min(1.0, abs(float(best.get("ate", 0.0)))), 4),
+                "reason": (
+                    f"causal decompiler IRF {best.get('factor_id')} "
+                    f"ATE={float(best.get('ate', 0.0)):+.3f} on {getattr(report, 'outcome', 'Y')}"
+                ),
+                "source": "causal_decompiler",
+            })
+        contrastive = list(getattr(report, "contrastive", None) or [])
+        if contrastive:
+            best = max(contrastive, key=lambda item: abs(float(item.get("ate", 0.0))))
+            suggestions.append({
+                "round": _round_from_factor(str(best.get("factor_id", ""))),
+                "intervention_type": "event_skip",
+                "variant": "skip",
+                "activation": round(min(1.0, abs(float(best.get("ate", 0.0)))), 4),
+                "reason": (
+                    f"contrastive skip {best.get('factor_id')} "
+                    f"ATE={float(best.get('ate', 0.0)):+.3f}; "
+                    f"commitment={getattr(report, 'point_of_commitment', None)}"
+                ),
+                "source": "causal_decompiler",
+            })
+        split = getattr(report, "split_y", None) or {}
+        protest = float(split.get("protest_authorship", 0.0))
+        private = float(split.get("public_private_divergence_mean", 0.0))
+        if protest > 0.02 and private > 0.15:
+            suggestions.append({
+                "round": 0,
+                "intervention_type": "observe_lock",
+                "variant": "omniscient",
+                "activation": round(min(1.0, private), 4),
+                "reason": (
+                    f"split-Y: protest={protest:.3f} vs public_private_divergence={private:.3f}"
+                ),
+                "source": "causal_decompiler",
+            })
+        suggestions.sort(key=lambda p: p["activation"], reverse=True)
+        return suggestions
+
+
+def _round_from_factor(factor_id: str) -> int:
+    for part in factor_id.split(":"):
+        if part.startswith("r") and part[1:].isdigit():
+            return int(part[1:])
+    return 0

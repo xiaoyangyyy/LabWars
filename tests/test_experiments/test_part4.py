@@ -1,4 +1,4 @@
-﻿"""Part 4 experiment integration tests."""
+"""Part 4 experiment integration tests."""
 
 from __future__ import annotations
 
@@ -34,6 +34,8 @@ class TestExperimentRuns:
         log = result["log"]
         assert len(log.round_records) == 60
         assert "protest_authorship" in log.outcomes
+        assert log.config["event_cast"]["idea"] == "phd_a"
+        assert log.config["story_beats"]["draft_round"] == 52
 
     def test_run_validity_no_memory(self):
         result = run_single("V", seed=2, condition_id="V1", max_rounds=20)
@@ -61,7 +63,7 @@ class TestMetricsAndReport:
     def test_report_has_thirteen_sections(self, tmp_path):
         result = run_single("A", seed=5, condition_id="A1", max_rounds=10)
         text = generate_report_from_log(result["log"])
-        for i in range(1, 14):
+        for i in range(1, 15):
             assert f"## {i}." in text
         path = generate_report(
             experiment_id="A",
@@ -72,7 +74,7 @@ class TestMetricsAndReport:
         )
         assert "LLM Scoring Influence" in text
         assert "Action Field Explanation" in text
-        assert "LLM Influence Footprint" in text
+        assert "Causal Decompiler MRI" in text
         assert path.exists()
 
 
@@ -89,6 +91,52 @@ class TestBatchAndAggregate:
         agg = aggregate_experiment("A", batch_path=tmp_path / "batch_A_summary.json")
         assert "A1" in agg["conditions"]
         assert "A2" in agg["conditions"]
+        assert agg["outcome"] == "authorship_escalation_score"
+
+    def test_batch_rows_include_experiment_specific_outcomes(self, tmp_path):
+        from src.experiments.batch import ANALYSIS_OUTCOMES
+
+        for key in (
+            "help_rebuttal", "trust_phd_b_r60", "trust_recovery_rate",
+            "interpretation_of_E030", "public_private_divergence_mean", "trust_pi_logged",
+        ):
+            assert key in ANALYSIS_OUTCOMES
+        rows = run_batch("A", seeds=1, condition_ids=["A1"], output_dir=tmp_path, max_rounds=8)
+        assert "interpretation_of_E030" in rows[0]
+        assert "trust_phd_b_r60" in rows[0]
+        assert "public_private_divergence_mean" in rows[0]
+
+    def test_skip_existing_rebuilds_row_without_rerun(self, tmp_path):
+        from src.experiments.batch import run_batch
+
+        jsonl = tmp_path / "run_AA1_seed0.jsonl"
+        jsonl.write_text(
+            "\n".join([
+                '{"type":"run_meta","run_id":"AA1_seed0","config":{"experiment_id":"A","condition_id":"A1","seed":0},"started_at":"t"}',
+                '{"type":"round","round":1,"event_id":"E001","metrics":{"trust_phd_a_pi":0.61,"public_private_divergence":0.5},"agent_deltas":{}}',
+                '{"type":"round","round":60,"event_id":"E060","metrics":{"trust_phd_a_pi":0.58,"public_private_divergence":0.4},"agent_deltas":{}}',
+                '{"type":"outcomes","protest_authorship":0.02,"trust_pi_final":0.0}',
+            ]),
+            encoding="utf-8",
+        )
+        rows = run_batch("A", seed_list=[0], condition_ids=["A1"], output_dir=tmp_path, skip_existing=True)
+        assert len(rows) == 1
+        assert rows[0]["skipped_existing"] is True
+        assert rows[0]["trust_pi_final"] == 0.58
+        assert rows[0]["public_private_divergence_last"] == 0.4
+
+    def test_aggregate_uses_experiment_primary_outcome(self, tmp_path):
+        summary = tmp_path / "batch_C_summary.json"
+        summary.write_text(
+            """[
+              {"experiment_id":"C","condition_id":"C1","seed":0,"trust_phd_b_r60":0.4,"trust_recovery_rate":0.2,"protest_authorship":0.01},
+              {"experiment_id":"C","condition_id":"C3","seed":0,"trust_phd_b_r60":0.7,"trust_recovery_rate":0.0,"protest_authorship":0.01}
+            ]""",
+            encoding="utf-8",
+        )
+        agg = aggregate_experiment("C", batch_path=summary)
+        assert agg["outcome"] == "trust_phd_b_r60"
+        assert agg["conditions"]["C3"]["mean"] == 0.7
 
     def test_new_outcomes_present(self):
         result = run_single("A", seed=6, condition_id="A2", max_rounds=55)

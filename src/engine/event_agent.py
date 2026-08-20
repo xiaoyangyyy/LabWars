@@ -8,16 +8,16 @@ memory, ledger, and recent-action state.
 from __future__ import annotations
 
 import copy
-import hashlib
 import math
-import random
 from dataclasses import dataclass, field
 from typing import Any
 
 from src.cognition.authorship import authorship_dispute_index, compute_authorship_scores
 from src.cognition.relationship import credit_threat_density, trust_fragmentation
+from src.engine.causal.noise import STREAM_EVENT_JITTER, STREAM_EVENT_SAMPLE, keyed_uniform, keyed_uniform_centered
 from src.world.loader import load_events
 from src.world.models import EventAtom, ObjectiveFact, WorldState
+from src.world.organization import resolve_event_cast
 
 REVIEWER_ACTIVE_FROM = 57
 
@@ -65,11 +65,6 @@ def _softmax(values: list[float], temperature: float = 0.24) -> list[float]:
     return [e / total for e in exps]
 
 
-def _stable_rng(seed: int, round_num: int) -> random.Random:
-    h = hashlib.sha256(f"event:{seed}:{round_num}".encode("utf-8")).hexdigest()
-    return random.Random(int(h[:16], 16))
-
-
 def _edge_map(world: WorldState) -> dict[tuple[str, str], Any]:
     return {(e.source, e.target): e for e in world.relationships}
 
@@ -115,10 +110,11 @@ def _memory_pressure(world: WorldState, agent_id: str, content_types: set[str]) 
 
 
 def _first_author_gap(world: WorldState) -> float:
-    if "phd_a" not in world.agents or "phd_b" not in world.agents:
+    cast = resolve_event_cast(world)
+    if cast.idea not in world.agents or cast.experimenter not in world.agents:
         return 0.0
     scores = compute_authorship_scores(world)
-    return _clamp(scores.get("phd_b", 0.0) - scores.get("phd_a", 0.0) + 0.5)
+    return _clamp(scores.get(cast.experimenter, 0.0) - scores.get(cast.idea, 0.0) + 0.5)
 
 
 class EventAgent:
@@ -143,11 +139,12 @@ class EventAgent:
         withdrawal_mass = _action_mass(actions, {"withdraw", "rebel", "confront", "ask_for_authorship"})
         rivalry_mass = _action_mass(actions, {"check_rival_arxiv", "submit_workshop_version"})
         integrity_mass = _action_mass(actions, {"hide_negative_result", "selectively_report", "leak_concern"})
-        phd_a_auth_memory = _memory_pressure(world, "phd_a", {"authorship_signal", "promise_broken", "promise_fulfilled"})
-        phd_a_betrayal_memory = _memory_pressure(world, "phd_a", {"betrayal_signal", "historical_pattern"})
-        a_to_b = edges.get(("phd_a", "phd_b"))
-        b_to_a = edges.get(("phd_b", "phd_a"))
-        pi_to_a = edges.get(("pi", "phd_a"))
+        cast = resolve_event_cast(world)
+        idea_auth_memory = _memory_pressure(world, cast.idea, {"authorship_signal", "promise_broken", "promise_fulfilled"})
+        idea_betrayal_memory = _memory_pressure(world, cast.idea, {"betrayal_signal", "historical_pattern"})
+        a_to_b = edges.get((cast.idea, cast.experimenter))
+        b_to_a = edges.get((cast.experimenter, cast.idea))
+        pi_to_a = edges.get((cast.pi, cast.idea))
 
         shared = {
             "authorship_dispute": dispute,
@@ -157,18 +154,18 @@ class EventAgent:
             "private_lobby_mass": private_lobby_mass,
             "documentation_mass": documentation_mass,
             "withdrawal_mass": withdrawal_mass,
-            "authorship_memory_pressure": phd_a_auth_memory,
-            "betrayal_memory_pressure": phd_a_betrayal_memory,
+            "authorship_memory_pressure": idea_auth_memory,
+            "betrayal_memory_pressure": idea_betrayal_memory,
         }
 
         candidates = [
             EventCandidate(
                 type="authorship_ambiguity",
-                source="pi",
-                targets=["phd_a", "phd_b", "project"],
+                source=cast.pi,
+                targets=[cast.idea, cast.experimenter, "project"],
                 visibility="team",
                 framing="ambiguous",
-                memory_salience=_clamp(0.45 + 0.35 * dispute + 0.15 * phd_a_auth_memory),
+                memory_salience=_clamp(0.45 + 0.35 * dispute + 0.15 * idea_auth_memory),
                 tendency=(
                     0.10
                     + 0.34 * dispute
@@ -186,8 +183,8 @@ class EventAgent:
             ),
             EventCandidate(
                 type="private_lobbying",
-                source="phd_b",
-                targets=["pi", "phd_a", "project"],
+                source=cast.experimenter,
+                targets=[cast.pi, cast.idea, "project"],
                 visibility="bilateral",
                 framing="ambiguous",
                 memory_salience=_clamp(0.35 + 0.30 * private_lobby_mass + 0.20 * threat_density),
@@ -200,7 +197,7 @@ class EventAgent:
                 ),
                 payload={
                     "authorship_conflict_delta": 0.03 + 0.04 * private_lobby_mass,
-                    "private_channel": "pi",
+                    "private_channel": cast.pi,
                     "rumor_reliability": 0.55,
                 },
                 description="A private authorship narrative starts circulating through PI access.",
@@ -208,8 +205,8 @@ class EventAgent:
             ),
             EventCandidate(
                 type="narrative_change",
-                source="phd_b",
-                targets=["phd_a", "pi", "project"],
+                source=cast.experimenter,
+                targets=[cast.idea, cast.pi, "project"],
                 visibility="team",
                 framing="negative",
                 memory_salience=_clamp(0.40 + 0.30 * documentation_mass + 0.20 * threat_density),
@@ -222,24 +219,24 @@ class EventAgent:
                 ),
                 payload={
                     "authorship_conflict_delta": 0.04,
-                    "ledger_experiments_phd_b": _clamp(0.50 + 0.20 * documentation_mass),
+                    f"ledger_experiments_{cast.experimenter}": _clamp(0.50 + 0.20 * documentation_mass),
                 },
                 description="Contribution framing shifts toward execution and experimental ownership.",
                 motives=shared,
             ),
             EventCandidate(
                 type="external_history",
-                source="lab_alumni",
-                targets=["phd_a", "project"],
+                source=cast.alumni or cast.pi,
+                targets=[cast.idea, "project"],
                 visibility="bilateral",
                 framing="negative",
-                memory_salience=_clamp(0.35 + 0.35 * phd_a_betrayal_memory + 0.18 * fragmentation),
+                memory_salience=_clamp(0.35 + 0.35 * idea_betrayal_memory + 0.18 * fragmentation),
                 tendency=(
                     0.04
-                    + 0.26 * phd_a_betrayal_memory
+                    + 0.26 * idea_betrayal_memory
                     + 0.18 * fragmentation
                     + 0.14 * withdrawal_mass
-                    + 0.10 * _action_mass(actions, {"talk_to_alumni"}, agent_id="phd_a")
+                    + 0.10 * _action_mass(actions, {"talk_to_alumni"}, agent_id=cast.idea)
                 ),
                 payload={"authorship_conflict_delta": 0.03, "historical_pattern_reliability": 0.70},
                 description="An alumni story changes how prior PI ambiguity is interpreted.",
@@ -247,8 +244,8 @@ class EventAgent:
             ),
             EventCandidate(
                 type="rival_preprint",
-                source="rival_lab_h",
-                targets=["project", "phd_a", "phd_b", "pi"],
+                source=cast.rival or cast.pi,
+                targets=["project", cast.idea, cast.experimenter, cast.pi],
                 visibility="public",
                 framing="negative",
                 memory_salience=_clamp(0.35 + 0.35 * project.rival_threat + 0.20 * rivalry_mass),
@@ -265,8 +262,8 @@ class EventAgent:
             ),
             EventCandidate(
                 type="integrity_dispute",
-                source="engineer_e",
-                targets=["project", "phd_a", "phd_b", "pi"],
+                source=cast.engineer or cast.experimenter,
+                targets=["project", cast.idea, cast.experimenter, cast.pi],
                 visibility="team",
                 framing="negative",
                 memory_salience=_clamp(0.35 + 0.35 * project.integrity_risk + 0.20 * integrity_mass),
@@ -283,8 +280,8 @@ class EventAgent:
             ),
             EventCandidate(
                 type="deadline_shift",
-                source="pi",
-                targets=["project", "phd_a", "phd_b", "postdoc_d"],
+                source=cast.pi,
+                targets=["project", cast.idea, cast.experimenter] + ([cast.postdoc] if cast.postdoc else []),
                 visibility="team",
                 framing="neutral",
                 memory_salience=_clamp(0.25 + 0.35 * project.deadline_pressure),
@@ -300,9 +297,11 @@ class EventAgent:
             ),
         ]
 
-        rng = _stable_rng(self.seed, round_num)
         for candidate in candidates:
-            candidate.tendency = max(-0.2, candidate.tendency + rng.uniform(-0.012, 0.012))
+            jitter = keyed_uniform_centered(
+                self.seed, round_num, STREAM_EVENT_JITTER, name=candidate.type, amplitude=0.012,
+            )
+            candidate.tendency = max(-0.2, candidate.tendency + jitter)
         candidates.sort(key=lambda c: c.tendency, reverse=True)
         kept = candidates[:6]
         probs = _softmax([c.tendency for c in kept], temperature=0.24)
@@ -327,8 +326,7 @@ class EventAgent:
         )
 
     def _sample_candidate(self, candidates: list[EventCandidate], round_num: int) -> EventCandidate:
-        rng = _stable_rng(self.seed + 104729, round_num)
-        needle = rng.random()
+        needle = keyed_uniform(self.seed, round_num, STREAM_EVENT_SAMPLE, name="needle")
         total = 0.0
         for candidate in candidates:
             total += candidate.probability
